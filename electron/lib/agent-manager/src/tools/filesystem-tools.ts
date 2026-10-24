@@ -160,6 +160,7 @@ export const FILESYSTEM_TOOLS: ToolConfig[] = [
       properties: {
         path: { type: 'string', description: 'Directory to analyze (top level only)' },
         strategy: { type: 'string', enum: ['type', 'date', 'extension', 'smart'], default: 'type', description: 'Group files by type (Images, Documents...), by month modified, by extension, or by meaning using the AI model (smart)' },
+        readContents: { type: 'boolean', default: false, description: 'Smart strategy only: read document text (PDF, Office, text) so the model understands what each file is' },
       },
       required: ['path'],
     },

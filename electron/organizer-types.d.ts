@@ -10,6 +10,13 @@ export interface PlanItem {
   reason: string;
   /** Whether the item is ticked by default in the review UI. */
   recommended: boolean;
+  /** The item is a whole folder (only proposed by the smart strategy). */
+  isFolder?: boolean;
+}
+
+export interface AnalyzeOptions {
+  /** Smart strategy only: send short text excerpts of documents to the AI model. */
+  readContents?: boolean;
 }
 
 export interface CategoryStat {
@@ -30,6 +37,8 @@ export interface DirectoryAnalysis {
   duplicateGroups: { size: number; paths: string[] }[];
   emptyFolders: string[];
   skipped: { path: string; reason: string }[];
+  /** Number of files whose contents were read and sent to the AI model. */
+  contentsRead: number;
   plan: PlanItem[];
 }
 

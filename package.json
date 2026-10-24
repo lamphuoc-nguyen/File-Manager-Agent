@@ -18,11 +18,12 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "lucide-react": "^0.294.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "zod": "^3.22.4",
-    "lucide-react": "^0.294.0",
-    "yaml": "^2.3.4"
+    "unpdf": "0.12.1",
+    "yaml": "^2.3.4",
+    "zod": "^3.22.4"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",

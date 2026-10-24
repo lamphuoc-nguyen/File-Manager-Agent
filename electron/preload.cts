@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { OrganizeStrategy, DirectoryAnalysis, PlanItem, ApplyResult } from './organizer-types.js';
+import type { OrganizeStrategy, DirectoryAnalysis, PlanItem, ApplyResult, AnalyzeOptions } from './organizer-types.js';
 import type { AiSettings, AiSettingsUpdate, AiChatMessage, AiChatReply } from './ai-types.js';
 
 const api = {
@@ -24,7 +24,7 @@ const api = {
 
   // Directory analysis & organization
   organize: {
-    analyze: (path: string, strategy?: OrganizeStrategy): Promise<DirectoryAnalysis> => ipcRenderer.invoke('organize:analyze', path, strategy),
+    analyze: (path: string, strategy?: OrganizeStrategy, options?: AnalyzeOptions): Promise<DirectoryAnalysis> => ipcRenderer.invoke('organize:analyze', path, strategy, options),
     apply: (items: PlanItem[]): Promise<ApplyResult> => ipcRenderer.invoke('organize:apply', items),
     undo: (result: ApplyResult): Promise<ApplyResult> => ipcRenderer.invoke('organize:undo', result),
   },

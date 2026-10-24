@@ -91,6 +91,9 @@ function App() {
   const [organizeStrategy, setOrganizeStrategy] = useState<OrganizeStrategy>('type');
   const [aiSettings, setAiSettings] = useState<AiSettingsState | null>(null);
   const [showAiSettings, setShowAiSettings] = useState(false);
+  const [readContents, setReadContents] = useState<boolean>(() => {
+    try { return localStorage.getItem('fm.readContents') !== 'false'; } catch { return true; }
+  });
   const chatEndRef = useRef<HTMLDivElement>(null);
   const listRequest = useRef(0);
   const toastTimer = useRef<number>();
@@ -300,12 +303,12 @@ function App() {
 
   const defaultStrategy = (): OrganizeStrategy => (aiSettings?.hasKey ? 'smart' : 'type');
 
-  const analyzeFolder = async (strategy: OrganizeStrategy = defaultStrategy(), path = currentPath) => {
+  const analyzeFolder = async (strategy: OrganizeStrategy = defaultStrategy(), path = currentPath, withContents = readContents) => {
     setOrganizerOpen(true);
     setOrganizeStrategy(strategy);
     setAnalyzing(true);
     try {
-      const result = await window.api.organize.analyze(path, strategy);
+      const result = await window.api.organize.analyze(path, strategy, { readContents: withContents });
       setAnalysis(result);
       return result;
     } catch (e: any) {
@@ -314,6 +317,12 @@ function App() {
     } finally {
       setAnalyzing(false);
     }
+  };
+
+  const changeReadContents = (value: boolean) => {
+    setReadContents(value);
+    try { localStorage.setItem('fm.readContents', String(value)); } catch { }
+    if (organizeStrategy === 'smart') analyzeFolder('smart', analysis?.root ?? currentPath, value);
   };
 
   /** Refreshes the plan after a change; skipped for AI plans so we don't re-query the model. */
@@ -394,7 +403,9 @@ function App() {
           : /\bextension/.test(lower) ? 'extension'
           : /\b(by )?type\b/.test(lower) ? 'type'
           : defaultStrategy();
-        const args = { path: currentPath, strategy };
+        // "by content" / "read the files" forces reading; otherwise use the saved preference.
+        const withContents = /\b(contents?|read|inside)\b/.test(lower) || readContents;
+        const args = { path: currentPath, strategy, readContents: strategy === 'smart' && withContents };
         setOrganizerOpen(true);
         setOrganizeStrategy(strategy);
         setAnalyzing(true);
@@ -679,6 +690,9 @@ function App() {
             analyzing={analyzing}
             strategy={organizeStrategy}
             aiEnabled={!!aiSettings?.hasKey}
+            aiModel={aiSettings?.model}
+            readContents={readContents}
+            onReadContentsChange={changeReadContents}
             lastResult={lastOrganize}
             onAnalyze={strategy => analyzeFolder(strategy, analysis?.root ?? currentPath)}
             onApply={applyOrganize}

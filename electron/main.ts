@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 import { writeFileSync, mkdirSync } from 'fs';
 import { createAgentRegistryManager, FILESYSTEM_TOOLS, type AgentConfig, type ToolResult } from './lib/agent-manager/src/index.js';
 import * as fsOps from './fs-ops.js';
-import { analyzeDirectory, applyPlan, undoApply, type OrganizeStrategy, type PlanItem, type ApplyResult } from './organizer.js';
+import { analyzeDirectory, applyPlan, undoApply, type OrganizeStrategy, type PlanItem, type ApplyResult, type AnalyzeOptions } from './organizer.js';
 import { getSettings, updateSettings } from './settings.js';
 import { chat, listModels, smartGrouper, testConnection } from './llm.js';
 import type { AiChatMessage, AiSettingsUpdate } from './ai-types.js';
@@ -74,7 +74,7 @@ ipcMain.handle('fs:open', async (_, path: string) => fsOps.open(path));
 ipcMain.handle('fs:showInFolder', async (_, path: string) => fsOps.showInFolder(path));
 
 // ===== Organizer IPC Handlers =====
-ipcMain.handle('organize:analyze', async (_, path: string, strategy?: OrganizeStrategy) => analyzeDirectory(path, strategy, smartGrouper));
+ipcMain.handle('organize:analyze', async (_, path: string, strategy?: OrganizeStrategy, options?: AnalyzeOptions) => analyzeDirectory(path, strategy, smartGrouper, options));
 ipcMain.handle('organize:apply', async (_, items: PlanItem[]) => applyPlan(items));
 ipcMain.handle('organize:undo', async (_, result: ApplyResult) => undoApply(result));
 
@@ -121,7 +121,7 @@ async function runTool(toolName: string, args: Record<string, any>): Promise<any
     case 'fs_stat': return fsOps.stat(args.path);
     case 'fs_search': return fsOps.search(args.root, args.pattern, args.maxResults);
     case 'fs_grep': return fsOps.grep(args.root, args.pattern, args.filePattern, args.maxResults);
-    case 'fs_analyze': return analyzeDirectory(args.path, args.strategy, smartGrouper);
+    case 'fs_analyze': return analyzeDirectory(args.path, args.strategy, smartGrouper, { readContents: !!args.readContents });
     case 'fs_organize': return applyPlan(args.items);
     default: throw new Error(`Tool ${toolName} is not implemented`);
   }

@@ -19,6 +19,9 @@ interface Props {
   /** Strategy being analyzed right now (may differ from the shown analysis while it loads). */
   strategy: OrganizeStrategy;
   aiEnabled: boolean;
+  aiModel?: string;
+  readContents: boolean;
+  onReadContentsChange: (value: boolean) => void;
   lastResult: ApplyResult | null;
   onAnalyze: (strategy: OrganizeStrategy) => void;
   onApply: (items: PlanItem[]) => Promise<void>;
@@ -26,7 +29,7 @@ interface Props {
   onClose: () => void;
 }
 
-export function Organizer({ analysis, analyzing, strategy, aiEnabled, lastResult, onAnalyze, onApply, onUndo, onClose }: Props) {
+export function Organizer({ analysis, analyzing, strategy, aiEnabled, aiModel, readContents, onReadContentsChange, lastResult, onAnalyze, onApply, onUndo, onClose }: Props) {
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
@@ -87,10 +90,21 @@ export function Organizer({ analysis, analyzing, strategy, aiEnabled, lastResult
             </button>
           </div>
 
+          {strategy === 'smart' && (
+            <label className="organizer-option">
+              <input type="checkbox" checked={readContents} disabled={analyzing || busy} onChange={e => onReadContentsChange(e.target.checked)} />
+              <span>
+                <strong>Read file contents</strong>
+                <span className="organizer-muted"> — understands PDFs, Word, Excel, PowerPoint and text files, not just names.
+                  Sends the first ~1,200 characters of each document to {aiModel ?? 'the AI model'}.</span>
+              </span>
+            </label>
+          )}
+
           {analyzing && (
             <div className="organizer-empty">
               <Loader2 size={20} className="animate-spin" />
-              {strategy === 'smart' ? 'Asking the AI model how to group these files… (can take a minute)' : 'Analyzing…'}
+              {strategy === 'smart' ? `${readContents ? 'Reading documents and asking' : 'Asking'} the AI model how to group these files… (can take a minute)` : 'Analyzing…'}
             </div>
           )}
 
@@ -149,7 +163,8 @@ export function Organizer({ analysis, analyzing, strategy, aiEnabled, lastResult
                         {isOpen && items.map(item => (
                           <label key={item.id} className="organizer-item">
                             <input type="checkbox" checked={checked.has(item.id)} onChange={e => toggle([item.id], e.target.checked)} />
-                            <span className="organizer-item-name" title={item.source}>{baseName(item.source)}</span>
+                            {item.isFolder && <Folder size={12} color="#f9d449" style={{ flexShrink: 0 }} />}
+                            <span className="organizer-item-name" title={item.source}>{baseName(item.source)}{item.isFolder && <span className="organizer-muted"> (whole folder)</span>}</span>
                             {item.destination && baseName(item.destination) !== baseName(item.source) && (
                               <span className="organizer-muted">→ {baseName(item.destination)}</span>
                             )}
@@ -162,11 +177,13 @@ export function Organizer({ analysis, analyzing, strategy, aiEnabled, lastResult
                 </div>
               )}
 
-              {analysis.skipped.length > 0 && (
-                <p className="organizer-muted" style={{ marginTop: 8 }}>
-                  Skipped {analysis.skipped.length} hidden, system or temporary file{analysis.skipped.length > 1 ? 's' : ''}. Existing folders are never moved.
-                </p>
-              )}
+              <p className="organizer-muted" style={{ marginTop: 8 }}>
+                {analysis.strategy === 'smart' && analysis.contentsRead > 0 && `Read the contents of ${analysis.contentsRead} document${analysis.contentsRead > 1 ? 's' : ''}. `}
+                {analysis.skipped.length > 0 && `Skipped ${analysis.skipped.length} hidden, system or temporary file${analysis.skipped.length > 1 ? 's' : ''}. `}
+                {analysis.strategy === 'smart'
+                  ? 'Folder moves are never pre-ticked: apps sometimes keep their data in folders.'
+                  : 'Existing folders are never moved.'}
+              </p>
             </>
           )}
 

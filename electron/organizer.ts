@@ -4,9 +4,10 @@ import { createHash } from 'crypto';
 import { join, extname, basename, resolve, parse } from 'path';
 import { homedir } from 'os';
 import * as fsOps from './fs-ops.js';
-import type { OrganizeStrategy, PlanItem, CategoryStat, DirectoryAnalysis, ApplyResult } from './organizer-types.js';
+import { canExtract, extractText } from './extract.js';
+import type { OrganizeStrategy, PlanItem, CategoryStat, DirectoryAnalysis, ApplyResult, AnalyzeOptions } from './organizer-types.js';
 
-export type { OrganizeStrategy, PlanItem, CategoryStat, DirectoryAnalysis, ApplyResult };
+export type { OrganizeStrategy, PlanItem, CategoryStat, DirectoryAnalysis, ApplyResult, AnalyzeOptions };
 
 // ===== Categories =====
 const CATEGORIES: Record<string, string[]> = {
@@ -57,11 +58,25 @@ function riskWarning(root: string, entryNames: string[]): string | undefined {
 }
 export const categoryOf = (name: string) => EXT_TO_CATEGORY.get(extOf(name)) ?? 'Other';
 
-/** Groups files by meaning (an AI model). Returns lowercased file name -> target folder; unlisted files stay put. */
+export interface SmartEntry {
+  kind: 'file' | 'folder';
+  name: string;
+  size: number;
+  modified: string;
+  /** Start of the document's text, when contents were read. */
+  excerpt?: string;
+  /** For folders: a sample of what's inside. */
+  contains?: string[];
+}
+
+/** Groups entries by meaning (an AI model). Returns lowercased name -> target folder; unlisted entries stay put. */
 export type SmartGrouper = (
-  files: { name: string; size: number; modified: string }[],
+  entries: SmartEntry[],
   existingFolders: string[],
 ) => Promise<Map<string, { folder: string; reason: string }>>;
+
+const EXCERPT_CHARS = 1200;
+const FOLDER_SAMPLE = 15;
 
 /** Makes a model-suggested folder name safe to use as a single path segment. */
 function sanitizeFolderName(name: string): string | null {
@@ -101,12 +116,19 @@ function uniqueDestination(dir: string, name: string, taken: Set<string>): strin
 // ===== Analysis =====
 /**
  * Analyzes the top level of `root` and proposes a plan. Nothing is changed on disk.
- * Existing folders are never moved; files go into folders named by the strategy.
+ * Files go into folders named by the strategy. Only the smart strategy proposes moving
+ * existing folders, and those proposals are never pre-ticked (apps keep data in folders).
  */
-export async function analyzeDirectory(root: string, strategy: OrganizeStrategy = 'type', smartGrouper?: SmartGrouper): Promise<DirectoryAnalysis> {
+export async function analyzeDirectory(
+  root: string,
+  strategy: OrganizeStrategy = 'type',
+  smartGrouper?: SmartGrouper,
+  options: AnalyzeOptions = {},
+): Promise<DirectoryAnalysis> {
   if (strategy === 'smart' && !smartGrouper) throw new Error('Smart organizing needs an AI model. Add an API key in AI settings.');
   const entries = await readdir(root, { withFileTypes: true });
   const files: { path: string; name: string; size: number; modified: Date; created: Date }[] = [];
+  const folders: { path: string; name: string; modified: Date; contains: string[] }[] = [];
   const skipped: DirectoryAnalysis['skipped'] = [];
   const emptyFolders: string[] = [];
   let totalFolders = 0;
@@ -116,7 +138,11 @@ export async function analyzeDirectory(root: string, strategy: OrganizeStrategy 
     if (entry.isDirectory()) {
       totalFolders++;
       if (entry.name.startsWith('.')) continue; // hidden folders like .git/.vscode are app-owned
-      try { if ((await readdir(full)).length === 0) emptyFolders.push(full); } catch { }
+      try {
+        const children = await readdir(full);
+        if (children.length === 0) emptyFolders.push(full);
+        else folders.push({ path: full, name: entry.name, modified: (await stat(full)).mtime, contains: children.filter(c => !c.startsWith('.')).slice(0, FOLDER_SAMPLE) });
+      } catch { }
       continue;
     }
     if (!entry.isFile()) continue;
@@ -161,12 +187,19 @@ export async function analyzeDirectory(root: string, strategy: OrganizeStrategy 
 
   // Build the plan. In risky folders nothing is ticked, so the user has to opt in item by item.
   const warning = riskWarning(root, entries.map(e => e.name));
-  const smart = strategy === 'smart'
-    ? await smartGrouper!(
-      files.filter(f => !duplicatesToTrash.has(f.path)).map(f => ({ name: f.name, size: f.size, modified: f.modified.toISOString() })),
-      entries.filter(e => e.isDirectory() && !e.name.startsWith('.')).map(e => e.name),
-    )
-    : null;
+  let contentsRead = 0;
+  let smart: Map<string, { folder: string; reason: string }> | null = null;
+  if (strategy === 'smart') {
+    const smartEntries: SmartEntry[] = [];
+    for (const f of files) {
+      if (duplicatesToTrash.has(f.path)) continue;
+      const excerpt = options.readContents && canExtract(f.path) ? await extractText(f.path, EXCERPT_CHARS) : null;
+      if (excerpt) contentsRead++;
+      smartEntries.push({ kind: 'file', name: f.name, size: f.size, modified: f.modified.toISOString(), excerpt: excerpt ?? undefined });
+    }
+    for (const d of folders) smartEntries.push({ kind: 'folder', name: d.name, size: 0, modified: d.modified.toISOString(), contains: d.contains });
+    smart = await smartGrouper!(smartEntries, [...folders.map(d => d.name), ...emptyFolders.map(p => basename(p))]);
+  }
   const plan: PlanItem[] = [];
   const taken = new Set<string>();
   let n = 0;
@@ -197,6 +230,25 @@ export async function analyzeDirectory(root: string, strategy: OrganizeStrategy 
       recommended: !warning,
     });
   }
+  if (smart) {
+    // Folders that other items are moving into must stay where they are.
+    const targets = new Set(plan.filter(p => p.kind === 'move').map(p => basename(join(p.destination!, '..')).toLowerCase()));
+    for (const d of folders) {
+      const assigned = smart.get(d.name.toLowerCase());
+      const group = assigned && sanitizeFolderName(assigned.folder);
+      if (!group || group.toLowerCase() === d.name.toLowerCase() || targets.has(d.name.toLowerCase())) continue;
+      targets.add(group.toLowerCase());
+      plan.push({
+        id: `p${n++}`,
+        kind: 'move',
+        isFolder: true,
+        source: d.path,
+        destination: uniqueDestination(join(root, group), d.name, taken),
+        reason: assigned.reason || `Belongs in ${group}`,
+        recommended: false,
+      });
+    }
+  }
   for (const dir of emptyFolders) {
     plan.push({ id: `p${n++}`, kind: 'trash', source: dir, reason: 'Empty folder', recommended: false });
   }
@@ -212,6 +264,7 @@ export async function analyzeDirectory(root: string, strategy: OrganizeStrategy 
     duplicateGroups,
     emptyFolders,
     skipped,
+    contentsRead,
     plan,
   };
 }
