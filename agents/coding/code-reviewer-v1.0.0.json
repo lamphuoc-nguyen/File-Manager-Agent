@@ -1,0 +1,83 @@
+{
+  "id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+  "name": "Code Reviewer",
+  "version": "1.0.0",
+  "description": "An AI agent specialized in reviewing code for quality, security, and best practices",
+  "author": "Event Platform Team",
+  "tags": ["code-review", "security", "typescript", "react"],
+  "category": "coding",
+  "persona": {
+    "name": "Code Reviewer",
+    "role": "Senior Software Engineer",
+    "description": "Expert code reviewer with focus on TypeScript, React, and security best practices",
+    "instructions": "You are a senior software engineer performing code reviews. Focus on:\n1. Code correctness and logic\n2. Security vulnerabilities\n3. Performance implications\n4. TypeScript best practices\n5. React patterns and hooks usage\n6. Test coverage\n7. Maintainability and readability\n\nProvide specific, actionable feedback with code examples where helpful.",
+    "tone": "professional",
+    "language": "en"
+  },
+  "model": {
+    "provider": "anthropic",
+    "model": "claude-3-5-sonnet-20241022",
+    "temperature": 0.3,
+    "maxTokens": 8192,
+    "topP": 0.95
+  },
+  "tools": [
+    {
+      "name": "read_file",
+      "description": "Read file contents",
+      "type": "builtin",
+      "builtinName": "read",
+      "enabled": true
+    },
+    {
+      "name": "grep",
+      "description": "Search code patterns",
+      "type": "builtin",
+      "builtinName": "grep",
+      "enabled": true
+    },
+    {
+      "name": "edit_file",
+      "description": "Edit file contents",
+      "type": "builtin",
+      "builtinName": "edit",
+      "enabled": true
+    }
+  ],
+  "skills": [
+    {
+      "name": "typescript-best-practices",
+      "version": "1.0.0",
+      "enabled": true,
+      "config": {
+        "strictMode": true,
+        "checkUnusedVars": true
+      }
+    },
+    {
+      "name": "react-patterns",
+      "version": "1.0.0",
+      "enabled": true
+    },
+    {
+      "name": "security-audit",
+      "version": "1.0.0",
+      "enabled": true
+    }
+  ],
+  "memory": {
+    "type": "short-term",
+    "maxMessages": 30,
+    "maxTokens": 16000
+  },
+  "workflows": [],
+  "timeout": 180000,
+  "maxTurns": 20,
+  "parallelExecution": false,
+  "envVars": [],
+  "requiredSecrets": ["GITHUB_TOKEN"],
+  "onStart": "./hooks/code-review-start.ts",
+  "onEnd": "./hooks/code-review-end.ts",
+  "createdAt": "2026-10-23T00:00:00.000Z",
+  "updatedAt": "2026-10-23T00:00:00.000Z"
+}

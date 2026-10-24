@@ -1,0 +1,9 @@
+node_modules/
+dist/
+dist-electron/
+release/
+*.tsbuildinfo
+
+# Unpacked app.asar copies from debugging packaged builds
+extracted-asar/
+extracted-check*/

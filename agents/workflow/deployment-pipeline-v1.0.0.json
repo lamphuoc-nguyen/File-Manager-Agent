@@ -1,0 +1,171 @@
+{
+  "id": "d4e5f6a7-b8c9-4d0e-8f2a-3b4c5d6e7f8a",
+  "name": "Deployment Pipeline",
+  "version": "1.0.0",
+  "description": "An automated workflow agent for CI/CD deployment pipelines",
+  "author": "Event Platform Team",
+  "tags": ["ci-cd", "deployment", "devops", "automation", "workflow"],
+  "category": "workflow",
+  "persona": {
+    "name": "Deployment Pipeline",
+    "role": "DevOps Engineer",
+    "description": "Automated deployment pipeline orchestrator",
+    "instructions": "You are a deployment pipeline orchestrator. Execute deployment workflows with proper validation, rollback capabilities, and notifications.",
+    "tone": "professional",
+    "language": "en"
+  },
+  "model": {
+    "provider": "openai",
+    "model": "gpt-4o",
+    "temperature": 0.1,
+    "maxTokens": 4096
+  },
+  "tools": [
+    {
+      "name": "shell_exec",
+      "description": "Execute shell commands",
+      "type": "function",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "command": { "type": "string" },
+          "workdir": { "type": "string" },
+          "timeout": { "type": "number" }
+        },
+        "required": ["command"]
+      },
+      "enabled": true
+    },
+    {
+      "name": "github_api",
+      "description": "Interact with GitHub API",
+      "type": "function",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "endpoint": { "type": "string" },
+          "method": { "type": "string", "enum": ["GET", "POST", "PUT", "DELETE", "PATCH"] },
+          "data": { "type": "object" }
+        },
+        "required": ["endpoint", "method"]
+      },
+      "enabled": true
+    }
+  ],
+  "skills": [
+    {
+      "name": "ci-cd-pipelines",
+      "version": "1.0.0",
+      "enabled": true
+    },
+    {
+      "name": "kubernetes-deployment",
+      "version": "1.0.0",
+      "enabled": true
+    }
+  ],
+  "memory": {
+    "type": "long-term",
+    "maxMessages": 100,
+    "maxTokens": 50000
+  },
+  "workflows": [
+    {
+      "id": "deploy-staging",
+      "name": "Deploy to Staging",
+      "description": "Deploy the latest build to staging environment",
+      "steps": [
+        {
+          "id": "build",
+          "name": "Build Application",
+          "description": "Build the application and run tests",
+          "agent": "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a",
+          "input": {
+            "command": "pnpm build",
+            "runTests": true
+          }
+        },
+        {
+          "id": "docker-build",
+          "name": "Build Docker Image",
+          "description": "Build and push Docker image",
+          "agent": "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a",
+          "input": {
+            "command": "docker build -t event-platform:staging . && docker push event-platform:staging"
+          },
+          "condition": "build.success == true"
+        },
+        {
+          "id": "deploy-staging",
+          "name": "Deploy to Staging",
+          "description": "Deploy to staging Kubernetes cluster",
+          "agent": "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a",
+          "input": {
+            "command": "kubectl apply -f k8s/staging/ -n staging"
+          },
+          "condition": "docker-build.success == true"
+        },
+        {
+          "id": "smoke-tests",
+          "name": "Run Smoke Tests",
+          "description": "Run smoke tests against staging",
+          "agent": "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a",
+          "input": {
+            "command": "pnpm test:smoke --env=staging"
+          },
+          "condition": "deploy-staging.success == true"
+        }
+      ],
+      "trigger": "webhook",
+      "eventFilter": "push:main"
+    },
+    {
+      "id": "deploy-production",
+      "name": "Deploy to Production",
+      "description": "Deploy to production with manual approval",
+      "steps": [
+        {
+          "id": "approval",
+          "name": "Manual Approval",
+          "description": "Wait for manual approval",
+          "agent": "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a",
+          "input": {
+            "type": "approval",
+            "message": "Approve production deployment?"
+          }
+        },
+        {
+          "id": "deploy-prod",
+          "name": "Deploy to Production",
+          "description": "Deploy to production Kubernetes cluster",
+          "agent": "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a",
+          "input": {
+            "command": "kubectl apply -f k8s/production/ -n production"
+          },
+          "condition": "approval.approved == true"
+        },
+        {
+          "id": "verify-prod",
+          "name": "Verify Production",
+          "description": "Run verification checks on production",
+          "agent": "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a",
+          "input": {
+            "command": "pnpm test:smoke --env=production"
+          },
+          "condition": "deploy-prod.success == true"
+        }
+      ],
+      "trigger": "manual"
+    }
+  ],
+  "timeout": 600000,
+  "maxTurns": 50,
+  "parallelExecution": false,
+  "envVars": ["KUBECONFIG", "GITHUB_TOKEN"],
+  "requiredSecrets": ["KUBECONFIG", "GITHUB_TOKEN", "DOCKER_REGISTRY_TOKEN"],
+  "onStart": "./hooks/deployment-start.ts",
+  "onEnd": "./hooks/deployment-end.ts",
+  "onError": "./hooks/deployment-error.ts",
+  "createdAt": "2026-10-23T00:00:00.000Z",
+  "updatedAt": "2026-10-23T00:00:00.000Z"
+}

@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist-electron",
+    "rootDir": "electron",
+    "noEmit": false,
+    "module": "CommonJS",
+    "moduleResolution": "Node10",
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"]
+  },
+  "files": ["electron/preload.cts"],
+  "include": []
+}
