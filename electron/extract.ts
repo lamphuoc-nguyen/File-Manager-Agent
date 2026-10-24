@@ -1,6 +1,7 @@
 import { openSync, readSync, closeSync, readFileSync, statSync } from 'fs';
 import { extname } from 'path';
 import { inflateRawSync } from 'zlib';
+import { findSecret, sensitivePathReason } from './sensitive.js';
 
 // Plain-text formats read directly.
 const TEXT_EXTS = new Set([
@@ -31,6 +32,19 @@ export async function extractText(path: string, maxChars = 1500): Promise<string
     if (ext === 'pdf') return await extractPdf(path, maxChars);
   } catch { }
   return null;
+}
+
+/**
+ * The only way file text may be read for the AI model: refuses sensitive files by name/location,
+ * and refuses text that contains anything secret-looking (keys, passwords, tokens).
+ */
+export async function extractTextForAi(path: string, maxChars: number): Promise<{ text: string | null; blocked?: string }> {
+  const byPath = sensitivePathReason(path);
+  if (byPath) return { text: null, blocked: byPath };
+  const text = await extractText(path, maxChars);
+  const secret = text ? findSecret(text) : null;
+  if (secret) return { text: null, blocked: `Contains what looks like a ${secret}` };
+  return { text };
 }
 
 function readTextHead(path: string, maxChars: number): string | null {

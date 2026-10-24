@@ -64,6 +64,7 @@ export function Organizer({ analysis, analyzing, strategy, aiEnabled, aiModel, m
   };
 
   const selectedItems = analysis?.plan.filter(i => checked.has(i.id)) ?? [];
+  const protectedCount = analysis?.skipped.filter(s => s.reason.startsWith('Protected')).length ?? 0;
   const trashCount = selectedItems.filter(i => i.kind === 'trash').length;
   const failed = lastResult?.applied.filter(i => !i.ok) ?? [];
 
@@ -99,7 +100,8 @@ export function Organizer({ analysis, analyzing, strategy, aiEnabled, aiModel, m
               <span>
                 <strong>Read file contents</strong>
                 <span className="organizer-muted"> — understands PDFs, Word, Excel, PowerPoint and text files, not just names.
-                  Sends the first ~1,200 characters of each document to {aiModel ?? 'the AI model'}.</span>
+                  Sends the first ~1,200 characters of each document to {aiModel ?? 'the AI model'}.
+                  Files with keys or passwords (.env, private keys, password files, or text that looks like a secret) are never read or sent.</span>
               </span>
             </label>
           )}
@@ -182,8 +184,10 @@ export function Organizer({ analysis, analyzing, strategy, aiEnabled, aiModel, m
 
               <p className="organizer-muted" style={{ marginTop: 8 }}>
                 {analysis.model && `Plan by ${analysis.model} in ${((analysis.durationMs ?? 0) / 1000).toFixed(1)}s${analysis.model !== aiModel ? ' (switched model since; click ↻ to re-run)' : ''}. `}
+                {protectedCount > 0 && `🔒 ${protectedCount} sensitive item${protectedCount > 1 ? 's' : ''} (keys, .env, passwords) protected: not read, not sent, not moved. `}
+                {analysis.secretsWithheld > 0 && `🔒 Withheld the contents of ${analysis.secretsWithheld} file${analysis.secretsWithheld > 1 ? 's' : ''} that looked like they contain a key or password. `}
                 {analysis.strategy === 'smart' && analysis.contentsRead > 0 && `Read the contents of ${analysis.contentsRead} document${analysis.contentsRead > 1 ? 's' : ''}. `}
-                {analysis.skipped.length > 0 && `Skipped ${analysis.skipped.length} hidden, system or temporary file${analysis.skipped.length > 1 ? 's' : ''}. `}
+                {analysis.skipped.length > protectedCount && `Skipped ${analysis.skipped.length - protectedCount} hidden, system or temporary file${analysis.skipped.length - protectedCount > 1 ? 's' : ''}. `}
                 {analysis.strategy === 'smart'
                   ? 'Folder moves are never pre-ticked: apps sometimes keep their data in folders.'
                   : 'Existing folders are never moved.'}

@@ -4,7 +4,8 @@ import { createHash } from 'crypto';
 import { join, extname, basename, resolve, parse } from 'path';
 import { homedir } from 'os';
 import * as fsOps from './fs-ops.js';
-import { canExtract, extractText } from './extract.js';
+import { canExtract, extractTextForAi } from './extract.js';
+import { sensitivePathReason } from './sensitive.js';
 import type { OrganizeStrategy, PlanItem, CategoryStat, DirectoryAnalysis, ApplyResult, AnalyzeOptions } from './organizer-types.js';
 
 export type { OrganizeStrategy, PlanItem, CategoryStat, DirectoryAnalysis, ApplyResult, AnalyzeOptions };
@@ -138,15 +139,24 @@ export async function analyzeDirectory(
     if (entry.isDirectory()) {
       totalFolders++;
       if (entry.name.startsWith('.')) continue; // hidden folders like .git/.vscode are app-owned
+      const sensitive = sensitivePathReason(full);
+      if (sensitive) { skipped.push({ path: full, reason: `Protected: ${sensitive}` }); continue; }
       try {
         const children = await readdir(full);
         if (children.length === 0) emptyFolders.push(full);
-        else folders.push({ path: full, name: entry.name, modified: (await stat(full)).mtime, contains: children.filter(c => !c.startsWith('.')).slice(0, FOLDER_SAMPLE) });
+        else folders.push({
+          path: full,
+          name: entry.name,
+          modified: (await stat(full)).mtime,
+          contains: children.filter(c => !c.startsWith('.') && !sensitivePathReason(join(full, c))).slice(0, FOLDER_SAMPLE),
+        });
       } catch { }
       continue;
     }
     if (!entry.isFile()) continue;
-    const reason = skipReason(entry.name);
+    // Sensitive files (keys, .env, passwords) are never read, sent to the AI, or moved.
+    const sensitive = sensitivePathReason(full);
+    const reason = sensitive ? `Protected: ${sensitive}` : skipReason(entry.name);
     if (reason) { skipped.push({ path: full, reason }); continue; }
     try {
       const s = await stat(full);
@@ -188,12 +198,18 @@ export async function analyzeDirectory(
   // Build the plan. In risky folders nothing is ticked, so the user has to opt in item by item.
   const warning = riskWarning(root, entries.map(e => e.name));
   let contentsRead = 0;
+  let secretsWithheld = 0;
   let smart: Map<string, { folder: string; reason: string }> | null = null;
   if (strategy === 'smart') {
     const smartEntries: SmartEntry[] = [];
     for (const f of files) {
       if (duplicatesToTrash.has(f.path)) continue;
-      const excerpt = options.readContents && canExtract(f.path) ? await extractText(f.path, EXCERPT_CHARS) : null;
+      let excerpt: string | null = null;
+      if (options.readContents && canExtract(f.path)) {
+        const read = await extractTextForAi(f.path, EXCERPT_CHARS);
+        if (read.blocked) secretsWithheld++;
+        excerpt = read.text;
+      }
       if (excerpt) contentsRead++;
       smartEntries.push({ kind: 'file', name: f.name, size: f.size, modified: f.modified.toISOString(), excerpt: excerpt ?? undefined });
     }
@@ -265,6 +281,7 @@ export async function analyzeDirectory(
     emptyFolders,
     skipped,
     contentsRead,
+    secretsWithheld,
     plan,
   };
 }

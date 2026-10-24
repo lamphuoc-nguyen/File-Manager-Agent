@@ -39,6 +39,8 @@ export interface DirectoryAnalysis {
   skipped: { path: string; reason: string }[];
   /** Number of files whose contents were read and sent to the AI model. */
   contentsRead: number;
+  /** Files whose excerpt was withheld because it looked like it contained keys or passwords. */
+  secretsWithheld: number;
   /** Smart strategy: the model that produced the plan, and how long analysis took. */
   model?: string;
   durationMs?: number;
