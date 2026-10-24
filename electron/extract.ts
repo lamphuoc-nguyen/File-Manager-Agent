@@ -121,8 +121,9 @@ const PDF_MAX_PAGES = 3;
 
 async function extractPdf(path: string, maxChars: number): Promise<string | null> {
   const { getDocumentProxy } = await import('unpdf');
-  // isEvalSupported: false — never compile font code from the PDF (CVE-2024-4367 class of issues).
-  const pdf = await getDocumentProxy(new Uint8Array(readFileSync(path)), { isEvalSupported: false });
+  // The pdf.js bundled with unpdf 1.x has no eval-based font compilation at all (the
+  // CVE-2024-4367 class of issues), so the old isEvalSupported: false option no longer exists.
+  const pdf = await getDocumentProxy(new Uint8Array(readFileSync(path)));
   try {
     const pages: string[] = [];
     for (let i = 1; i <= Math.min(pdf.numPages, PDF_MAX_PAGES); i++) {
@@ -132,6 +133,6 @@ async function extractPdf(path: string, maxChars: number): Promise<string | null
     }
     return tidy(pages.join('\n'), maxChars) || null;
   } finally {
-    await pdf.destroy();
+    await pdf.loadingTask.destroy();
   }
 }
