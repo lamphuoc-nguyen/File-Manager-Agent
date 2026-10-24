@@ -2,12 +2,14 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Folder, File, ChevronRight, ChevronDown, Home, HardDrive, RefreshCw, ArrowUp,
   Plus, Trash2, Edit, Copy, Scissors, ClipboardPaste, Bot, MessageSquare,
-  Send, Loader2, X, LayoutGrid, List, FolderOpen, Sparkles
+  Send, Loader2, X, LayoutGrid, List, FolderOpen, Sparkles, Settings
 } from 'lucide-react';
 import { joinPath, parentPath, isRoot, normalize, crumbs, validateName, uniqueCopyName, baseName } from './lib/paths';
-import { formatSize, formatDate } from './lib/format';
+import { formatSize, formatDate, errorText } from './lib/format';
 import { Organizer } from './components/Organizer';
+import { AiSettings } from './components/AiSettings';
 import type { ApplyResult, DirectoryAnalysis, OrganizeStrategy, PlanItem } from '../electron/organizer-types';
+import type { AiSettings as AiSettingsState } from '../electron/ai-types';
 
 interface FileItem {
   name: string;
@@ -86,6 +88,9 @@ function App() {
   const [analysis, setAnalysis] = useState<DirectoryAnalysis | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [lastOrganize, setLastOrganize] = useState<ApplyResult | null>(null);
+  const [organizeStrategy, setOrganizeStrategy] = useState<OrganizeStrategy>('type');
+  const [aiSettings, setAiSettings] = useState<AiSettingsState | null>(null);
+  const [showAiSettings, setShowAiSettings] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const listRequest = useRef(0);
   const toastTimer = useRef<number>();
@@ -133,6 +138,7 @@ function App() {
   useEffect(() => {
     loadDrives();
     loadAgents();
+    window.api.ai.getSettings().then(setAiSettings).catch(console.error);
   }, []);
 
   useEffect(() => {
@@ -292,19 +298,29 @@ function App() {
     return lines.join('\n');
   };
 
-  const analyzeFolder = async (strategy: OrganizeStrategy = analysis?.strategy ?? 'type', path = currentPath) => {
+  const defaultStrategy = (): OrganizeStrategy => (aiSettings?.hasKey ? 'smart' : 'type');
+
+  const analyzeFolder = async (strategy: OrganizeStrategy = defaultStrategy(), path = currentPath) => {
     setOrganizerOpen(true);
+    setOrganizeStrategy(strategy);
     setAnalyzing(true);
     try {
       const result = await window.api.organize.analyze(path, strategy);
       setAnalysis(result);
       return result;
     } catch (e: any) {
-      showToastMsg(e.message, 'error');
+      showToastMsg(errorText(e), 'error');
       return null;
     } finally {
       setAnalyzing(false);
     }
+  };
+
+  /** Refreshes the plan after a change; skipped for AI plans so we don't re-query the model. */
+  const reanalyzeAfterChange = async () => {
+    if (!analysis) return;
+    if (analysis.strategy === 'smart') setAnalysis(null);
+    else await analyzeFolder(analysis.strategy, analysis.root);
   };
 
   const applyOrganize = async (items: PlanItem[]) => {
@@ -314,7 +330,7 @@ function App() {
     showToastMsg(`Organized: ${ok} of ${result.applied.length} changes applied`, ok === result.applied.length ? 'success' : 'error');
     setChatMessages(prev => [...prev, { role: 'agent', content: `Done — applied ${ok} of ${result.applied.length} changes. Say "undo" to put the moved files back.` }]);
     refresh();
-    if (analysis) await analyzeFolder(analysis.strategy, analysis.root);
+    await reanalyzeAfterChange();
   };
 
   const undoOrganize = async () => {
@@ -327,7 +343,7 @@ function App() {
     showToastMsg(msg, 'success');
     setChatMessages(prev => [...prev, { role: 'agent', content: msg }]);
     refresh();
-    if (organizerOpen && analysis) await analyzeFolder(analysis.strategy, analysis.root);
+    if (organizerOpen) await reanalyzeAfterChange();
   };
 
   // ===== Agent Operations =====
@@ -362,19 +378,25 @@ function App() {
     try {
       if (!agentConfig) throw new Error('Agent config not loaded');
 
-      // For demo, we do simple keyword-based tool selection.
-      // In production, this would call an LLM
+      // Actions that change files are matched by keyword and always confirmed in the UI.
+      // With an AI model configured, everything else (questions, listing, searching) goes to the model,
+      // which only has read-only tools; without one, simple keyword commands handle it.
       let response = '';
       const lower = userMsg.toLowerCase();
       const quoted = (re: RegExp) => userMsg.match(re)?.[1]?.trim();
+      const aiOn = !!aiSettings?.hasKey;
 
       if (/^\s*undo\b/.test(lower)) {
         if (lastOrganize) { await undoOrganize(); return; }
         response = 'There is no organize action to undo.';
-      } else if (/\b(organi[sz]e|analy[sz]e|tidy|clean\s*up|sort (out|this|these|my)|declutter)\b/.test(lower)) {
-        const strategy: OrganizeStrategy = /\b(date|month|year|when)\b/.test(lower) ? 'date' : /\bextension/.test(lower) ? 'extension' : 'type';
+      } else if (/\b(organi[sz]e|tidy|clean\s*up|sort (out|this|these|my)|declutter)\b/.test(lower) || (!aiOn && /\banaly[sz]e\b/.test(lower))) {
+        const strategy: OrganizeStrategy = /\b(date|month|year|when)\b/.test(lower) ? 'date'
+          : /\bextension/.test(lower) ? 'extension'
+          : /\b(by )?type\b/.test(lower) ? 'type'
+          : defaultStrategy();
         const args = { path: currentPath, strategy };
         setOrganizerOpen(true);
+        setOrganizeStrategy(strategy);
         setAnalyzing(true);
         const result = await window.api.agent.execute(selectedAgent, 'fs_analyze', args).finally(() => setAnalyzing(false));
         if (result.success) {
@@ -382,7 +404,7 @@ function App() {
           response = summarizeAnalysis(result.data);
         } else response = `Failed: ${result.error}`;
         addToolMessage(`Analyzed ${currentPath}`, 'fs_analyze', args, result.success ? `${result.data.plan.length} plan items` : result);
-      } else if (/\b(grep|search content|search in files)\b/.test(lower)) {
+      } else if (!aiOn && /\b(grep|search content|search in files)\b/.test(lower)) {
         const pattern = quoted(/(?:grep|search content|search in files)\s+(?:for\s+)?["']?([^"'\n]+)["']?/i);
         if (pattern) {
           const args = { root: currentPath, pattern };
@@ -392,7 +414,7 @@ function App() {
             : `Failed: ${result.error}`;
           addToolMessage(response, 'fs_grep', args, result);
         } else response = 'What text should I search for?';
-      } else if (/\b(search|find)\b/.test(lower)) {
+      } else if (!aiOn && /\b(search|find)\b/.test(lower)) {
         const pattern = quoted(/(?:search|find)\s+(?:for\s+)?["']?([^"'\n]+)["']?/i) || '*';
         const args = { root: currentPath, pattern: pattern.includes('*') ? pattern : `*${pattern}*` };
         const result = await window.api.agent.execute(selectedAgent, 'fs_search', args);
@@ -432,7 +454,7 @@ function App() {
             },
           });
         }
-      } else if (/\b(list|show|what)\b/.test(lower)) {
+      } else if (!aiOn && /\b(list|show|what)\b/.test(lower)) {
         const args = { path: currentPath };
         const result = await window.api.agent.execute(selectedAgent, 'fs_list', args);
         if (result.success) {
@@ -440,13 +462,23 @@ function App() {
           response = `Found ${items.length} items in ${currentPath}:\n` + items.map(f => `${f.isDirectory ? '📁' : '📄'} ${f.name}${f.isDirectory ? '' : ` (${formatSize(f.size)})`}`).join('\n');
         } else response = `Failed: ${result.error}`;
         addToolMessage(response, 'fs_list', args, result.success ? `${result.data.length} items` : result);
+      } else if (aiOn) {
+        const history = [...chatMessages, { role: 'user' as const, content: userMsg }]
+          .filter(m => m.role !== 'tool')
+          .slice(-20)
+          .map(m => ({ role: m.role === 'user' ? 'user' as const : 'assistant' as const, content: m.content }));
+        const reply = await window.api.ai.chat(history, { currentPath, persona: agentConfig.persona?.instructions });
+        for (const call of reply.toolCalls) {
+          addToolMessage(call.ok ? `${call.name}: ${call.summary}` : `${call.name} failed: ${call.summary}`, call.name, call.args, call.summary);
+        }
+        response = reply.content;
       } else {
-        response = `I can help you manage files in ${currentPath}. Try asking me to:\n• "Organize this folder" (or "organize by date")\n• "List files" or "Show what's here"\n• "Create a folder called myfolder"\n• "Delete file.txt"\n• "Find *.ts"\n• "Grep for functionName" (search content)`;
+        response = `I can help you manage files in ${currentPath}. Add an NVIDIA API key (⚙ above) to ask questions in plain language. Without one, try:\n• "Organize this folder" (or "organize by date")\n• "List files" or "Show what's here"\n• "Create a folder called myfolder"\n• "Delete file.txt"\n• "Find *.ts"\n• "Grep for functionName" (search content)`;
       }
 
       setChatMessages(prev => [...prev, { role: 'agent', content: response }]);
     } catch (e: any) {
-      setChatMessages(prev => [...prev, { role: 'agent', content: `Error: ${e.message}` }]);
+      setChatMessages(prev => [...prev, { role: 'agent', content: `Error: ${errorText(e)}` }]);
     } finally {
       setAgentLoading(false);
     }
@@ -552,6 +584,12 @@ function App() {
           <aside className="agent-panel">
             <div className="panel-header">
               <span className="panel-title"><Bot size={16} /> Agent Assistant</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span className={`ai-badge ${aiSettings?.hasKey ? 'on' : ''}`} title={aiSettings?.hasKey ? `Using ${aiSettings.model}` : 'No AI model configured'}>
+                  {aiSettings?.hasKey ? `AI: ${aiSettings.model.split('/').pop()}` : 'AI off'}
+                </span>
+                <button className="btn" onClick={() => setShowAiSettings(true)} title="AI settings (API key, model)"><Settings size={14} /></button>
+              </span>
             </div>
             <select className="agent-select" value={selectedAgent} onChange={e => { setSelectedAgent(e.target.value); loadAgentConfig(e.target.value); }}>
               {agents.length === 0 && <option value="">No agents found</option>}
@@ -639,12 +677,18 @@ function App() {
           <Organizer
             analysis={analysis}
             analyzing={analyzing}
+            strategy={organizeStrategy}
+            aiEnabled={!!aiSettings?.hasKey}
             lastResult={lastOrganize}
             onAnalyze={strategy => analyzeFolder(strategy, analysis?.root ?? currentPath)}
             onApply={applyOrganize}
             onUndo={undoOrganize}
             onClose={() => setOrganizerOpen(false)}
           />
+        )}
+
+        {showAiSettings && aiSettings && (
+          <AiSettings settings={aiSettings} onSaved={setAiSettings} onClose={() => setShowAiSettings(false)} />
         )}
 
         {dialog && <Dialog dialog={dialog} onClose={() => setDialog(null)} />}

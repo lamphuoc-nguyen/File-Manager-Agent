@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { OrganizeStrategy, DirectoryAnalysis, PlanItem, ApplyResult } from './organizer-types.js';
+import type { AiSettings, AiSettingsUpdate, AiChatMessage, AiChatReply } from './ai-types.js';
 
 const api = {
   // Filesystem
@@ -26,6 +27,15 @@ const api = {
     analyze: (path: string, strategy?: OrganizeStrategy): Promise<DirectoryAnalysis> => ipcRenderer.invoke('organize:analyze', path, strategy),
     apply: (items: PlanItem[]): Promise<ApplyResult> => ipcRenderer.invoke('organize:apply', items),
     undo: (result: ApplyResult): Promise<ApplyResult> => ipcRenderer.invoke('organize:undo', result),
+  },
+
+  // AI model (NVIDIA or any OpenAI-compatible API). The key stays in the main process.
+  ai: {
+    getSettings: (): Promise<AiSettings> => ipcRenderer.invoke('ai:getSettings'),
+    updateSettings: (update: AiSettingsUpdate): Promise<AiSettings> => ipcRenderer.invoke('ai:updateSettings', update),
+    test: (): Promise<string> => ipcRenderer.invoke('ai:test'),
+    listModels: (): Promise<string[]> => ipcRenderer.invoke('ai:listModels'),
+    chat: (history: AiChatMessage[], context: { currentPath: string; persona?: string }): Promise<AiChatReply> => ipcRenderer.invoke('ai:chat', history, context),
   },
 
   // Dialogs

@@ -6,3 +6,6 @@ export const formatSize = (bytes: number) => {
 };
 
 export const formatDate = (iso: string) => (iso ? new Date(iso).toLocaleString() : '');
+
+/** Strips Electron's "Error invoking remote method 'x': Error:" prefix from IPC errors. */
+export const errorText = (e: any) => String(e?.message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');

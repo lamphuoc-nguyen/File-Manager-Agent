@@ -5,6 +5,7 @@ import { baseName, parentPath } from '../lib/paths';
 import { formatSize } from '../lib/format';
 
 const STRATEGIES: { value: OrganizeStrategy; label: string }[] = [
+  { value: 'smart', label: 'Smart (AI): by project / topic' },
   { value: 'type', label: 'By type (Images, Documents…)' },
   { value: 'date', label: 'By month modified' },
   { value: 'extension', label: 'By extension' },
@@ -15,6 +16,9 @@ const TRASH_GROUP = 'Recycle Bin';
 interface Props {
   analysis: DirectoryAnalysis | null;
   analyzing: boolean;
+  /** Strategy being analyzed right now (may differ from the shown analysis while it loads). */
+  strategy: OrganizeStrategy;
+  aiEnabled: boolean;
   lastResult: ApplyResult | null;
   onAnalyze: (strategy: OrganizeStrategy) => void;
   onApply: (items: PlanItem[]) => Promise<void>;
@@ -22,11 +26,10 @@ interface Props {
   onClose: () => void;
 }
 
-export function Organizer({ analysis, analyzing, lastResult, onAnalyze, onApply, onUndo, onClose }: Props) {
+export function Organizer({ analysis, analyzing, strategy, aiEnabled, lastResult, onAnalyze, onApply, onUndo, onClose }: Props) {
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
-  const strategy = analysis?.strategy ?? 'type';
 
   // Reset selection to the recommended items whenever a new analysis arrives.
   useEffect(() => {
@@ -73,18 +76,25 @@ export function Organizer({ analysis, analyzing, lastResult, onAnalyze, onApply,
         <div className="modal-body organizer">
           <div className="organizer-controls">
             <select className="form-input" value={strategy} onChange={e => onAnalyze(e.target.value as OrganizeStrategy)} disabled={analyzing || busy}>
-              {STRATEGIES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+              {STRATEGIES.map(s => (
+                <option key={s.value} value={s.value} disabled={s.value === 'smart' && !aiEnabled}>
+                  {s.label}{s.value === 'smart' && !aiEnabled ? ' (add an API key in AI settings)' : ''}
+                </option>
+              ))}
             </select>
             <button className="btn" onClick={() => onAnalyze(strategy)} disabled={analyzing || busy} title="Re-analyze">
               <RefreshCw size={14} className={analyzing ? 'animate-spin' : ''} />
             </button>
           </div>
 
-          {analyzing && !analysis && (
-            <div className="organizer-empty"><Loader2 size={20} className="animate-spin" /> Analyzing…</div>
+          {analyzing && (
+            <div className="organizer-empty">
+              <Loader2 size={20} className="animate-spin" />
+              {strategy === 'smart' ? 'Asking the AI model how to group these files… (can take a minute)' : 'Analyzing…'}
+            </div>
           )}
 
-          {analysis && (
+          {analysis && !analyzing && (
             <>
               {analysis.warning && (
                 <div className="organizer-warning">

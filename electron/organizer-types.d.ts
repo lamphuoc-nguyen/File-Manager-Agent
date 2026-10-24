@@ -1,6 +1,6 @@
 // Shared between main, preload and renderer. Declaration-only so it is never emitted.
 
-export type OrganizeStrategy = 'type' | 'date' | 'extension';
+export type OrganizeStrategy = 'type' | 'date' | 'extension' | 'smart';
 
 export interface PlanItem {
   id: string;

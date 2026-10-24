@@ -156,3 +156,8 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,
 .organizer-result { margin-top: 12px; padding: 8px 10px; border: 1px solid var(--success); border-radius: var(--radius); font-size: 12px; }
 .organizer-result ul { margin: 4px 0 0 16px; color: var(--danger); }
 .organizer-warning { display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px; margin-bottom: 12px; border: 1px solid var(--warning); border-radius: var(--radius); color: var(--warning); font-size: 12px; }
+
+/* AI */
+.ai-badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--border); color: var(--fg-muted); max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai-badge.on { border-color: var(--success); color: var(--success); }
+.ai-status { display: flex; gap: 6px; align-items: flex-start; font-size: 12px; word-break: break-word; }

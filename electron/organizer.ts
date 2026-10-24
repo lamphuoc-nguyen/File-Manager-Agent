@@ -57,7 +57,19 @@ function riskWarning(root: string, entryNames: string[]): string | undefined {
 }
 export const categoryOf = (name: string) => EXT_TO_CATEGORY.get(extOf(name)) ?? 'Other';
 
-function folderFor(name: string, modified: Date, strategy: OrganizeStrategy): string {
+/** Groups files by meaning (an AI model). Returns lowercased file name -> target folder; unlisted files stay put. */
+export type SmartGrouper = (
+  files: { name: string; size: number; modified: string }[],
+  existingFolders: string[],
+) => Promise<Map<string, { folder: string; reason: string }>>;
+
+/** Makes a model-suggested folder name safe to use as a single path segment. */
+function sanitizeFolderName(name: string): string | null {
+  const clean = name.replace(/[\\/:*?"<>|\x00-\x1f]/g, ' ').replace(/\s+/g, ' ').replace(/^[. ]+|[. ]+$/g, '').slice(0, 60);
+  return clean && clean !== '.' && clean !== '..' ? clean : null;
+}
+
+function folderFor(name: string, modified: Date, strategy: Exclude<OrganizeStrategy, 'smart'>): string {
   switch (strategy) {
     case 'date': return `${modified.getFullYear()}-${String(modified.getMonth() + 1).padStart(2, '0')}`;
     case 'extension': return extOf(name).toUpperCase() || 'No extension';
@@ -91,7 +103,8 @@ function uniqueDestination(dir: string, name: string, taken: Set<string>): strin
  * Analyzes the top level of `root` and proposes a plan. Nothing is changed on disk.
  * Existing folders are never moved; files go into folders named by the strategy.
  */
-export async function analyzeDirectory(root: string, strategy: OrganizeStrategy = 'type'): Promise<DirectoryAnalysis> {
+export async function analyzeDirectory(root: string, strategy: OrganizeStrategy = 'type', smartGrouper?: SmartGrouper): Promise<DirectoryAnalysis> {
+  if (strategy === 'smart' && !smartGrouper) throw new Error('Smart organizing needs an AI model. Add an API key in AI settings.');
   const entries = await readdir(root, { withFileTypes: true });
   const files: { path: string; name: string; size: number; modified: Date; created: Date }[] = [];
   const skipped: DirectoryAnalysis['skipped'] = [];
@@ -148,6 +161,12 @@ export async function analyzeDirectory(root: string, strategy: OrganizeStrategy 
 
   // Build the plan. In risky folders nothing is ticked, so the user has to opt in item by item.
   const warning = riskWarning(root, entries.map(e => e.name));
+  const smart = strategy === 'smart'
+    ? await smartGrouper!(
+      files.filter(f => !duplicatesToTrash.has(f.path)).map(f => ({ name: f.name, size: f.size, modified: f.modified.toISOString() })),
+      entries.filter(e => e.isDirectory() && !e.name.startsWith('.')).map(e => e.name),
+    )
+    : null;
   const plan: PlanItem[] = [];
   const taken = new Set<string>();
   let n = 0;
@@ -157,13 +176,24 @@ export async function analyzeDirectory(root: string, strategy: OrganizeStrategy 
       plan.push({ id: `p${n++}`, kind: 'trash', source: f.path, reason: `Duplicate of ${basename(original)}`, recommended: false });
       continue;
     }
-    const folder = folderFor(f.name, f.modified, strategy);
+    let folder: string;
+    let reason: string;
+    if (smart) {
+      const assigned = smart.get(f.name.toLowerCase());
+      const name = assigned && sanitizeFolderName(assigned.folder);
+      if (!name) continue; // the model wasn't sure; leave the file where it is
+      folder = name;
+      reason = assigned.reason || `Belongs in ${name}`;
+    } else {
+      folder = folderFor(f.name, f.modified, strategy as Exclude<OrganizeStrategy, 'smart'>);
+      reason = strategy === 'date' ? `Modified ${folder}` : strategy === 'extension' ? `.${extOf(f.name)} file` : `${folder} file`;
+    }
     plan.push({
       id: `p${n++}`,
       kind: 'move',
       source: f.path,
       destination: uniqueDestination(join(root, folder), f.name, taken),
-      reason: strategy === 'date' ? `Modified ${folder}` : strategy === 'extension' ? `.${extOf(f.name)} file` : `${folder} file`,
+      reason,
       recommended: !warning,
     });
   }

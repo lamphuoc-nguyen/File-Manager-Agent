@@ -159,7 +159,7 @@ export const FILESYSTEM_TOOLS: ToolConfig[] = [
       type: 'object',
       properties: {
         path: { type: 'string', description: 'Directory to analyze (top level only)' },
-        strategy: { type: 'string', enum: ['type', 'date', 'extension'], default: 'type', description: 'Group files by type (Images, Documents...), by month modified, or by extension' },
+        strategy: { type: 'string', enum: ['type', 'date', 'extension', 'smart'], default: 'type', description: 'Group files by type (Images, Documents...), by month modified, by extension, or by meaning using the AI model (smart)' },
       },
       required: ['path'],
     },
