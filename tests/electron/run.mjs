@@ -9,6 +9,7 @@ import { ROOT, TMP } from './_env.mjs';
 
 const SUITES = [
   ['organizer.mjs', 'electron'],
+  ['registry.mjs', 'electron'],
   ['content.mjs', 'electron'],
   ['models.mjs', 'electron'],
   ['security.mjs', 'electron'],

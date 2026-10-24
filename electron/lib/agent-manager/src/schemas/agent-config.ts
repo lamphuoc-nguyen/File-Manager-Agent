@@ -31,7 +31,7 @@ export const ToolConfigSchema = z.object({
   name: z.string(),
   description: z.string(),
   type: z.enum(['function', 'builtin', 'custom']),
-  parameters: z.record(z.unknown()).optional(),
+  parameters: z.record(z.string(), z.unknown()).optional(),
   handler: z.string().optional(),
   enabled: z.boolean().default(true),
 });
@@ -43,7 +43,7 @@ export const SkillConfigSchema = z.object({
   name: z.string(),
   version: z.string().optional(),
   enabled: z.boolean().default(true),
-  config: z.record(z.unknown()).optional(),
+  config: z.record(z.string(), z.unknown()).optional(),
 });
 
 /**
