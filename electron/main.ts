@@ -28,6 +28,8 @@ function createWindow() {
     height: 900,
     minWidth: 1000,
     minHeight: 600,
+    // Packaged builds take the icon from the .exe; in dev, point at the source PNG.
+    ...(app.isPackaged ? {} : { icon: join(__dirname, '..', 'build', 'icon.png') }),
     webPreferences: {
       // Sandboxed preloads must be CommonJS, hence the .cjs build (see tsconfig.preload.json).
       preload: join(__dirname, 'preload.cjs'),

@@ -16,7 +16,8 @@
     "start": "npm run build:electron && vite build && electron .",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json",
-    "test:electron": "npm run build:electron && node tests/electron/run.mjs"
+    "test:electron": "npm run build:electron && node tests/electron/run.mjs",
+    "icons": "electron scripts/make-icons.mjs"
   },
   "dependencies": {
     "lucide-react": "1.61.0",
@@ -41,7 +42,8 @@
     "productName": "File Manager",
     "copyright": "Copyright © 2026 File Manager",
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "build"
     },
     "files": [
       "dist/**/*",
@@ -65,18 +67,25 @@
           ]
         }
       ],
-      "forceCodeSigning": false
+      "forceCodeSigning": false,
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "perMachine": false
+      "perMachine": false,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "File Manager"
     },
     "mac": {
       "target": "dmg"
     },
     "linux": {
-      "target": "AppImage"
+      "target": "AppImage",
+      "icon": "build/icon.png"
     }
   }
 }
