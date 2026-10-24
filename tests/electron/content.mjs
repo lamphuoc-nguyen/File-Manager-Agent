@@ -70,6 +70,6 @@ app.whenReady().then(async () => {
   } catch (e) { console.log('ERROR', e.stack); }
   server.close();
   rmSync(d, { recursive: true, force: true });
-  rmSync(userData, { recursive: true, force: true });
+  // userData stays locked until Electron exits; tests/electron/run.mjs removes it afterwards.
   app.quit();
 });

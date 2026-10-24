@@ -49,6 +49,6 @@ app.whenReady().then(async () => {
     ok(`test timeout is ~60s (${Math.round((Date.now() - t) / 1000)}s)`, Date.now() - t < 70_000);
   } catch (e) { console.log('ERROR', e.stack); }
   server.close();
-  rmSync(userData, { recursive: true, force: true });
+  // userData stays locked until Electron exits; tests/electron/run.mjs removes it afterwards.
   app.quit();
 });

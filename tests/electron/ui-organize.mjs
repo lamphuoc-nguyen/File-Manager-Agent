@@ -39,5 +39,5 @@ try {
   await clickText('Re-analyze'); await sleep(2500);
   ok('Re-analyze by date clears the warning', !(await ev(`!![...document.querySelectorAll('.organizer-warning')].find(e=>e.innerText.includes('Options changed'))`)));
 } catch (e) { console.log('ERROR', e.message); }
-finally { ws.close(); child.kill(); server.close(); await sleep(1500); rmSync(userData, { recursive: true, force: true }); }
+finally { ws.close(); child.kill(); server.close(); await sleep(1500); try { rmSync(userData, { recursive: true, force: true }); } catch { /* run.mjs cleans tests/.tmp */ } }
 process.exit(0);
