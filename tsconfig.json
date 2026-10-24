@@ -16,15 +16,6 @@
     "allowSyntheticDefaultImports": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
-    "baseUrl": ".",
-    "paths": {
-      "@/*": [
-        "src/*"
-      ],
-      "@electron/*": [
-        "electron/*"
-      ]
-    },
     "types": [
       "node",
       "electron"
