@@ -16,8 +16,11 @@ const TRASH_GROUP = 'Recycle Bin';
 interface Props {
   analysis: DirectoryAnalysis | null;
   analyzing: boolean;
-  /** Strategy being analyzed right now (may differ from the shown analysis while it loads). */
+  /** Folder this window organizes. */
+  root: string;
+  /** Selected strategy; nothing runs until the user clicks Analyze. */
   strategy: OrganizeStrategy;
+  onStrategyChange: (strategy: OrganizeStrategy) => void;
   aiEnabled: boolean;
   aiModel?: string;
   /** Rendered next to the strategy selector for the smart strategy. */
@@ -25,13 +28,13 @@ interface Props {
   readContents: boolean;
   onReadContentsChange: (value: boolean) => void;
   lastResult: ApplyResult | null;
-  onAnalyze: (strategy: OrganizeStrategy) => void;
+  onAnalyze: () => void;
   onApply: (items: PlanItem[]) => Promise<void>;
   onUndo: () => Promise<void>;
   onClose: () => void;
 }
 
-export function Organizer({ analysis, analyzing, strategy, aiEnabled, aiModel, modelPicker, readContents, onReadContentsChange, lastResult, onAnalyze, onApply, onUndo, onClose }: Props) {
+export function Organizer({ analysis, analyzing, root, strategy, onStrategyChange, aiEnabled, aiModel, modelPicker, readContents, onReadContentsChange, lastResult, onAnalyze, onApply, onUndo, onClose }: Props) {
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
@@ -67,6 +70,8 @@ export function Organizer({ analysis, analyzing, strategy, aiEnabled, aiModel, m
   const protectedCount = analysis?.skipped.filter(s => s.reason.startsWith('Protected')).length ?? 0;
   const trashCount = selectedItems.filter(i => i.kind === 'trash').length;
   const failed = lastResult?.applied.filter(i => !i.ok) ?? [];
+  // The shown plan was made with different options; applying it would surprise the user.
+  const stale = !!analysis && (analysis.strategy !== strategy || (strategy === 'smart' && analysis.model !== aiModel));
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -74,14 +79,14 @@ export function Organizer({ analysis, analyzing, strategy, aiEnabled, aiModel, m
         <div className="modal-header">
           <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
             <Sparkles size={16} />
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Organize {analysis ? baseName(analysis.root) : ''}</span>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Organize {baseName(root)}</span>
           </span>
           <button className="btn" onClick={onClose}><X size={16} /></button>
         </div>
 
         <div className="modal-body organizer">
           <div className="organizer-controls">
-            <select className="form-input" value={strategy} onChange={e => onAnalyze(e.target.value as OrganizeStrategy)} disabled={analyzing || busy}>
+            <select className="form-input" value={strategy} onChange={e => onStrategyChange(e.target.value as OrganizeStrategy)} disabled={analyzing || busy}>
               {STRATEGIES.map(s => (
                 <option key={s.value} value={s.value} disabled={s.value === 'smart' && !aiEnabled}>
                   {s.label}{s.value === 'smart' && !aiEnabled ? ' (add an API key in AI settings)' : ''}
@@ -89,8 +94,9 @@ export function Organizer({ analysis, analyzing, strategy, aiEnabled, aiModel, m
               ))}
             </select>
             {strategy === 'smart' && modelPicker}
-            <button className="btn" onClick={() => onAnalyze(strategy)} disabled={analyzing || busy} title="Re-analyze (e.g. after switching model)">
-              <RefreshCw size={14} className={analyzing ? 'animate-spin' : ''} />
+            <button className="btn btn-primary" onClick={onAnalyze} disabled={analyzing || busy} title="Look at the folder and propose a plan. Nothing is moved.">
+              {analyzing ? <Loader2 size={14} className="animate-spin" /> : analysis ? <RefreshCw size={14} /> : <Sparkles size={14} />}
+              {analysis ? 'Re-analyze' : 'Analyze'}
             </button>
           </div>
 
@@ -104,6 +110,25 @@ export function Organizer({ analysis, analyzing, strategy, aiEnabled, aiModel, m
                   Files with keys or passwords (.env, private keys, password files, or text that looks like a secret) are never read or sent.</span>
               </span>
             </label>
+          )}
+
+          {!analysis && !analyzing && (
+            <div className="organizer-empty" style={{ flexDirection: 'column', gap: 4 }}>
+              <span>Choose how to organize <strong>{baseName(root)}</strong>, then click <strong>Analyze</strong>.</span>
+              <span className="organizer-muted">
+                {strategy === 'smart'
+                  ? `Analyze sends ${readContents ? 'file names and short document excerpts' : 'file names'} to ${aiModel ?? 'the AI model'}. `
+                  : 'Runs on this computer only. '}
+                Nothing is moved until you review the plan and click Apply.
+              </span>
+            </div>
+          )}
+
+          {stale && !analyzing && (
+            <div className="organizer-warning">
+              <AlertTriangle size={16} style={{ flexShrink: 0 }} />
+              <span>Options changed since this plan was made. Click Re-analyze to update it before applying.</span>
+            </div>
           )}
 
           {analyzing && (
@@ -215,7 +240,7 @@ export function Organizer({ analysis, analyzing, strategy, aiEnabled, aiModel, m
           <button
             className={`btn ${trashCount ? 'btn-danger' : 'btn-primary'}`}
             onClick={() => run(() => onApply(selectedItems))}
-            disabled={busy || analyzing || selectedItems.length === 0}
+            disabled={busy || analyzing || stale || selectedItems.length === 0}
           >
             {busy && <Loader2 size={14} className="animate-spin" />}
             Apply {selectedItems.length} change{selectedItems.length === 1 ? '' : 's'}

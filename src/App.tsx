@@ -86,6 +86,8 @@ function App() {
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [dialog, setDialog] = useState<DialogState | null>(null);
   const [organizerOpen, setOrganizerOpen] = useState(false);
+  /** Folder the Organize window is working on. */
+  const [organizeRoot, setOrganizeRoot] = useState('');
   const [analysis, setAnalysis] = useState<DirectoryAnalysis | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [lastOrganize, setLastOrganize] = useState<ApplyResult | null>(null);
@@ -304,8 +306,17 @@ function App() {
 
   const defaultStrategy = (): OrganizeStrategy => (aiSettings?.hasKey ? 'smart' : 'type');
 
+  /** Opens the Organize window without analyzing: the user picks options first, then clicks Analyze. */
+  const openOrganizer = () => {
+    if (analysis && normalize(analysis.root).toLowerCase() !== normalize(currentPath).toLowerCase()) setAnalysis(null);
+    if (!analysis || normalize(analysis.root).toLowerCase() !== normalize(currentPath).toLowerCase()) setOrganizeStrategy(defaultStrategy());
+    setOrganizeRoot(currentPath);
+    setOrganizerOpen(true);
+  };
+
   const analyzeFolder = async (strategy: OrganizeStrategy = defaultStrategy(), path = currentPath, withContents = readContents) => {
     setOrganizerOpen(true);
+    setOrganizeRoot(path);
     setOrganizeStrategy(strategy);
     setAnalyzing(true);
     try {
@@ -323,7 +334,6 @@ function App() {
   const changeReadContents = (value: boolean) => {
     setReadContents(value);
     try { localStorage.setItem('fm.readContents', String(value)); } catch { }
-    if (organizeStrategy === 'smart') analyzeFolder('smart', analysis?.root ?? currentPath, value);
   };
 
   /** Refreshes the plan after a change; skipped for AI plans so we don't re-query the model. */
@@ -408,6 +418,7 @@ function App() {
         const withContents = /\b(contents?|read|inside)\b/.test(lower) || readContents;
         const args = { path: currentPath, strategy, readContents: strategy === 'smart' && withContents };
         setOrganizerOpen(true);
+        setOrganizeRoot(currentPath);
         setOrganizeStrategy(strategy);
         setAnalyzing(true);
         const result = await window.api.agent.execute(selectedAgent, 'fs_analyze', args).finally(() => setAnalyzing(false));
@@ -511,7 +522,7 @@ function App() {
           <button className="btn" onClick={refresh} title="Refresh (F5)" disabled={loading}><RefreshCw size={16} className={loading ? 'animate-spin' : ''} /></button>
           <button className="btn" onClick={handleNewFolder} title="New Folder (Ctrl+Shift+N)" disabled={!currentPath}><Plus size={16} /></button>
           <button className="btn" onClick={handlePaste} title="Paste (Ctrl+V)" disabled={!clipboard}><ClipboardPaste size={16} /></button>
-          <button className="btn" onClick={() => analyzeFolder()} title="Analyze & organize this folder" disabled={!currentPath}><Sparkles size={16} /> Organize</button>
+          <button className="btn" onClick={openOrganizer} title="Organize this folder (choose options, then Analyze)" disabled={!currentPath}><Sparkles size={16} /> Organize</button>
         </div>
         <div className="path-bar">
           {pathCrumbs.map((c, i) => (
@@ -700,7 +711,9 @@ function App() {
             readContents={readContents}
             onReadContentsChange={changeReadContents}
             lastResult={lastOrganize}
-            onAnalyze={strategy => analyzeFolder(strategy, analysis?.root ?? currentPath)}
+            root={organizeRoot}
+            onStrategyChange={setOrganizeStrategy}
+            onAnalyze={() => analyzeFolder(organizeStrategy, organizeRoot)}
             onApply={applyOrganize}
             onUndo={undoOrganize}
             onClose={() => setOrganizerOpen(false)}
