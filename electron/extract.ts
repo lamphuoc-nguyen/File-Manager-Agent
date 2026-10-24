@@ -17,7 +17,7 @@ export const canExtract = (path: string) => {
   return TEXT_EXTS.has(ext) || ZIP_DOC_EXTS.has(ext) || ext === 'pdf';
 };
 
-const tidy = (text: string, maxChars: number) => text.replace(/[ \t\f\v ]+/g, ' ').replace(/\s*\n\s*/g, '\n').trim().slice(0, maxChars);
+const tidy = (text: string, maxChars: number) => text.replace(/[ \t\f\v]+/g, ' ').replace(/\s*\n\s*/g, '\n').trim().slice(0, maxChars);
 
 /**
  * Returns readable text from a document (first `maxChars` characters), or null for
@@ -30,7 +30,9 @@ export async function extractText(path: string, maxChars = 1500): Promise<string
     if (statSync(path).size > MAX_BINARY_DOC_BYTES) return null;
     if (ZIP_DOC_EXTS.has(ext)) return extractZipDoc(path, ext, maxChars);
     if (ext === 'pdf') return await extractPdf(path, maxChars);
-  } catch { }
+  } catch {
+    // Ignore extraction errors, return null
+  }
   return null;
 }
 

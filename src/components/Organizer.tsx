@@ -187,6 +187,7 @@ export function Organizer({ analysis, analyzing, root, onChooseFolder, strategy,
                     return (
                       <div key={group} className="organizer-group">
                         <div className="organizer-group-header">
+                          {/* eslint-disable-next-line @typescript-eslint/no-unused-expressions -- functional update returns new state */}
                           <button className="tree-toggle" onClick={() => setCollapsed(prev => { const n = new Set(prev); n.has(group) ? n.delete(group) : n.add(group); return n; })}>
                             {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                           </button>

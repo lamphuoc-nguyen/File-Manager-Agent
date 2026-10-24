@@ -341,7 +341,9 @@ function App() {
 
   const changeReadContents = (value: boolean) => {
     setReadContents(value);
-    try { localStorage.setItem('fm.readContents', String(value)); } catch { }
+    try { localStorage.setItem('fm.readContents', String(value)); } catch {
+      // Ignore localStorage errors
+    }
   };
 
   /** Refreshes the plan after a change; skipped for AI plans so we don't re-query the model. */

@@ -103,6 +103,7 @@ const FOLDER_SAMPLE = 15;
 
 /** Makes a model-suggested folder name safe to use as a single path segment. */
 function sanitizeFolderName(name: string): string | null {
+  // eslint-disable-next-line no-control-regex -- intentionally strips control characters
   const clean = name.replace(/[\\/:*?"<>|\x00-\x1f]/g, ' ').replace(/\s+/g, ' ').replace(/^[. ]+|[. ]+$/g, '').slice(0, 60);
   return clean && clean !== '.' && clean !== '..' ? clean : null;
 }
@@ -173,7 +174,9 @@ export async function analyzeDirectory(
           modified: (await stat(full)).mtime,
           contains: children.filter(c => !c.startsWith('.') && !sensitivePathReason(join(full, c))).slice(0, FOLDER_SAMPLE),
         });
-      } catch { }
+      } catch {
+        // Ignore folder read errors
+      }
       continue;
     }
     if (!entry.isFile()) continue;
@@ -207,7 +210,9 @@ export async function analyzeDirectory(
     if (group.length < 2) continue;
     const byHash = new Map<string, typeof files>();
     for (const f of group) {
-      try { const h = await hashFile(f.path); byHash.set(h, [...(byHash.get(h) ?? []), f]); } catch { }
+      try { const h = await hashFile(f.path); byHash.set(h, [...(byHash.get(h) ?? []), f]); } catch {
+        // Ignore hash errors
+      }
     }
     for (const same of byHash.values()) {
       if (same.length < 2) continue;
@@ -350,7 +355,9 @@ export async function undoApply(result: ApplyResult): Promise<ApplyResult> {
     .map(i => ({ ...i, source: i.destination!, destination: i.source }));
   const undone = await applyPlan(reversed);
   for (const dir of result.createdDirs) {
-    try { await rmdir(dir); } catch { } // not empty (user added files) -> keep it
+    try { await rmdir(dir); } catch {
+      // Directory not empty, keep it
+    }
   }
   return undone;
 }

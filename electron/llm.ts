@@ -38,14 +38,14 @@ async function request(path: string, init: RequestInit = {}, timeoutMs = REQUEST
     });
   } catch (e: any) {
     if (e?.name === 'TimeoutError' || e?.name === 'AbortError') {
-      throw new Error(`No answer from ${model} within ${timeoutMs / 1000}s. NVIDIA's free endpoints are sometimes busy: try again, or switch to a faster model such as nvidia/nemotron-3.5-lightning-30b-a3b.`);
+      throw new Error(`No answer from ${model} within ${timeoutMs / 1000}s. NVIDIA's free endpoints are sometimes busy: try again, or switch to a faster model such as nvidia/nemotron-3.5-lightning-30b-a3b.`, { cause: e });
     }
-    throw new Error(`Cannot reach ${baseUrl} (${e?.cause?.code ?? e?.message}). Check your internet connection and the base URL.`);
+    throw new Error(`Cannot reach ${baseUrl} (${e?.cause?.code ?? e?.message}). Check your internet connection and the base URL.`, { cause: e });
   }
   const body = await res.text().catch(() => '');
   if (/^\s*</.test(body)) throw new Error(`The base URL returned a web page instead of an API response. ${WEB_PAGE_HINT}`);
   if (!res.ok) {
-    const detail = (() => { try { const j = JSON.parse(body); return j.detail ?? j.error?.message ?? j.message ?? body; } catch { return body; } })();
+    const detail = (() => { try { const j = JSON.parse(body); return j.detail ?? j.error?.message ?? j.message ?? body; } catch (_) { return body; } })();
     if (res.status === 401 || res.status === 403) throw new Error(`API key rejected (${res.status}). Paste the key again in AI settings; make sure it starts with nvapi-.`);
     if (res.status === 404) throw new Error(`Not found (404): "${model}" may not exist. Click List in AI settings to see available models. ${String(detail).slice(0, 150)}`);
     if (res.status === 410) throw new Error(`"${model}" has been retired by NVIDIA. Pick another model (click List in AI settings to see what's available).`);
@@ -307,7 +307,9 @@ export async function chat(history: AiChatMessage[], context: { currentPath: str
     messages.push({ role: 'assistant', content: reply.content ?? null, tool_calls: reply.tool_calls });
     for (const call of reply.tool_calls) {
       let args: Record<string, any> = {};
-      try { args = JSON.parse(call.function.arguments || '{}'); } catch { }
+      try { args = JSON.parse(call.function.arguments || '{}'); } catch {
+        // Invalid JSON, use empty args
+      }
       for (const key of ['path', 'root']) {
         if (typeof args[key] === 'string' && !/^([A-Za-z]:[\\/]|[\\/])/.test(args[key])) {
           args[key] = `${context.currentPath.replace(/[\\/]+$/, '')}\\${args[key]}`;

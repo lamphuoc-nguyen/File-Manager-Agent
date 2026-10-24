@@ -182,7 +182,9 @@ export function grep(root: string, pattern: string, filePattern = '*', maxResult
         .map((text, i) => ({ line: i + 1, column: text.search(regex), text }))
         .filter(m => m.column >= 0);
       if (matches.length) results.push({ path: full, matches });
-    } catch { }
+    } catch {
+      // Ignore read errors
+    }
     return results.length >= maxResults;
   });
   return results;

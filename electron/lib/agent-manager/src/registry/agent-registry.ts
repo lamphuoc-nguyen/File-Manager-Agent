@@ -44,7 +44,9 @@ export class ElectronAgentRegistryManager {
         if (result.success) {
           return result.data;
         }
-      } catch { }
+      } catch {
+        // Ignore parse errors, return default registry
+      }
     }
     return { version: '1.0.0', agents: [], lastUpdated: new Date().toISOString() };
   }

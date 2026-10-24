@@ -28,7 +28,9 @@ const settingsPath = () => join(app.getPath('userData'), 'ai-settings.json');
 function load(): StoredSettings {
   try {
     if (existsSync(settingsPath())) return { baseUrl: DEFAULT_BASE_URL, model: DEFAULT_MODEL, ...JSON.parse(readFileSync(settingsPath(), 'utf-8')) };
-  } catch { }
+  } catch {
+    // Ignore settings load errors, return defaults
+  }
   return { baseUrl: DEFAULT_BASE_URL, model: DEFAULT_MODEL };
 }
 
@@ -52,7 +54,9 @@ export async function initApiKey(): Promise<void> {
       const apiKeyEnc = (await safeStorage.encryptStringAsync(result)).toString('base64');
       save({ ...load(), apiKeyEnc });
     }
-  } catch { } // undecryptable (e.g. another Windows user): fall back to the env var
+  } catch {
+    // Undecryptable (e.g. another Windows user): fall back to the env var
+  }
 }
 
 /** The key never leaves the main process; falls back to the NVIDIA_API_KEY env var. */
