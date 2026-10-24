@@ -3,6 +3,7 @@ import { readdir, stat, rmdir } from 'fs/promises';
 import { createHash } from 'crypto';
 import { join, extname, basename, resolve, parse } from 'path';
 import { homedir } from 'os';
+import { app } from 'electron';
 import * as fsOps from './fs-ops.js';
 import { canExtract, extractTextForAi } from './extract.js';
 import { sensitivePathReason } from './sensitive.js';
@@ -42,6 +43,12 @@ function skipReason(name: string): string | null {
   if (lower.startsWith('~$')) return 'Office lock file';
   if (IN_PROGRESS_EXTS.has(extOf(lower)) || /\.tmp\./.test(lower)) return 'Temporary or still downloading';
   return null;
+}
+
+/** True if `dir` holds the running app (its project folder in dev, its install folder when packaged). */
+function isAppFolder(dir: string): boolean {
+  const d = resolve(dir).toLowerCase() + '\\';
+  return [app.getAppPath(), process.execPath].some(p => (resolve(p).toLowerCase() + '\\').startsWith(d));
 }
 
 /** Explains why organizing `root` is risky, or returns undefined if it looks like a normal user folder. */
@@ -141,6 +148,7 @@ export async function analyzeDirectory(
       if (entry.name.startsWith('.')) continue; // hidden folders like .git/.vscode are app-owned
       const sensitive = sensitivePathReason(full);
       if (sensitive) { skipped.push({ path: full, reason: `Protected: ${sensitive}` }); continue; }
+      if (isAppFolder(full)) { skipped.push({ path: full, reason: 'Protected: this app is running from here' }); continue; }
       try {
         const children = await readdir(full);
         if (children.length === 0) emptyFolders.push(full);
