@@ -74,7 +74,12 @@ ipcMain.handle('fs:open', async (_, path: string) => fsOps.open(path));
 ipcMain.handle('fs:showInFolder', async (_, path: string) => fsOps.showInFolder(path));
 
 // ===== Organizer IPC Handlers =====
-ipcMain.handle('organize:analyze', async (_, path: string, strategy?: OrganizeStrategy, options?: AnalyzeOptions) => analyzeDirectory(path, strategy, smartGrouper, options));
+ipcMain.handle('organize:analyze', async (_, path: string, strategy?: OrganizeStrategy, options?: AnalyzeOptions) => {
+  const started = Date.now();
+  const analysis = await analyzeDirectory(path, strategy, smartGrouper, options);
+  // Recorded so plans from different models can be compared side by side.
+  return strategy === 'smart' ? { ...analysis, model: getSettings().model, durationMs: Date.now() - started } : analysis;
+});
 ipcMain.handle('organize:apply', async (_, items: PlanItem[]) => applyPlan(items));
 ipcMain.handle('organize:undo', async (_, result: ApplyResult) => undoApply(result));
 

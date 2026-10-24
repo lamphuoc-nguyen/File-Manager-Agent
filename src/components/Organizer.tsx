@@ -20,6 +20,8 @@ interface Props {
   strategy: OrganizeStrategy;
   aiEnabled: boolean;
   aiModel?: string;
+  /** Rendered next to the strategy selector for the smart strategy. */
+  modelPicker?: React.ReactNode;
   readContents: boolean;
   onReadContentsChange: (value: boolean) => void;
   lastResult: ApplyResult | null;
@@ -29,7 +31,7 @@ interface Props {
   onClose: () => void;
 }
 
-export function Organizer({ analysis, analyzing, strategy, aiEnabled, aiModel, readContents, onReadContentsChange, lastResult, onAnalyze, onApply, onUndo, onClose }: Props) {
+export function Organizer({ analysis, analyzing, strategy, aiEnabled, aiModel, modelPicker, readContents, onReadContentsChange, lastResult, onAnalyze, onApply, onUndo, onClose }: Props) {
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
@@ -85,7 +87,8 @@ export function Organizer({ analysis, analyzing, strategy, aiEnabled, aiModel, r
                 </option>
               ))}
             </select>
-            <button className="btn" onClick={() => onAnalyze(strategy)} disabled={analyzing || busy} title="Re-analyze">
+            {strategy === 'smart' && modelPicker}
+            <button className="btn" onClick={() => onAnalyze(strategy)} disabled={analyzing || busy} title="Re-analyze (e.g. after switching model)">
               <RefreshCw size={14} className={analyzing ? 'animate-spin' : ''} />
             </button>
           </div>
@@ -178,6 +181,7 @@ export function Organizer({ analysis, analyzing, strategy, aiEnabled, aiModel, r
               )}
 
               <p className="organizer-muted" style={{ marginTop: 8 }}>
+                {analysis.model && `Plan by ${analysis.model} in ${((analysis.durationMs ?? 0) / 1000).toFixed(1)}s${analysis.model !== aiModel ? ' (switched model since; click ↻ to re-run)' : ''}. `}
                 {analysis.strategy === 'smart' && analysis.contentsRead > 0 && `Read the contents of ${analysis.contentsRead} document${analysis.contentsRead > 1 ? 's' : ''}. `}
                 {analysis.skipped.length > 0 && `Skipped ${analysis.skipped.length} hidden, system or temporary file${analysis.skipped.length > 1 ? 's' : ''}. `}
                 {analysis.strategy === 'smart'

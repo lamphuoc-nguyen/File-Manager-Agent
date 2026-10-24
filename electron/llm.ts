@@ -10,6 +10,7 @@ interface LlmMessage {
   content: string | null;
   tool_calls?: { id: string; type: 'function'; function: { name: string; arguments: string } }[];
   tool_call_id?: string;
+  finish_reason?: string;
 }
 
 interface CompletionOptions {
@@ -49,9 +50,9 @@ async function complete(messages: LlmMessage[], opts: CompletionOptions = {}): P
   };
   if (opts.tools) body.tools = opts.tools;
   const json = await request('/chat/completions', { method: 'POST', body: JSON.stringify(body) });
-  const message = json.choices?.[0]?.message;
-  if (!message) throw new Error('The model returned no answer');
-  return message;
+  const choice = json.choices?.[0];
+  if (!choice?.message) throw new Error('The model returned no answer');
+  return { ...choice.message, finish_reason: choice.finish_reason };
 }
 
 /** Reasoning models (DeepSeek-R1 etc.) prefix answers with <think>…</think>. */
@@ -89,6 +90,28 @@ function parseJsonObject(text: string): any {
   return JSON.parse(cleaned.slice(start, end + 1));
 }
 
+/** Gets a JSON reply, retrying once with a nudge when the model returns broken JSON. */
+async function completeJson(messages: LlmMessage[]): Promise<any> {
+  const reply = await complete(messages, { maxTokens: 4096, temperature: 0.1 });
+  try {
+    return parseJsonObject(reply.content ?? '');
+  } catch {
+    const retry = await complete([
+      ...messages,
+      { role: 'assistant', content: reply.content ?? '' },
+      { role: 'user', content: 'That was not valid JSON. Reply again with only the JSON object, no other text.' },
+    ], { maxTokens: 4096, temperature: 0 });
+    try {
+      return parseJsonObject(retry.content ?? '');
+    } catch {
+      if (retry.finish_reason === 'length' || reply.finish_reason === 'length') {
+        throw new Error(`${getSettings().model} ran out of output tokens (reasoning models spend tokens "thinking"). Try a faster non-reasoning model, or turn off "Read file contents".`);
+      }
+      throw new Error(`${getSettings().model} did not return valid JSON twice in a row. Try another model.`);
+    }
+  }
+}
+
 /**
  * Asks the model to group files into folders by meaning (project, topic, purpose).
  * The result is only a proposal: the organizer validates names and the user reviews it.
@@ -99,7 +122,7 @@ export const smartGrouper: SmartGrouper = async (entries, existingFolders) => {
   const batchSize = entries.some(e => e.excerpt) ? BATCH_SIZE_WITH_CONTENT : BATCH_SIZE;
   for (let i = 0; i < entries.length; i += batchSize) {
     const batch = entries.slice(i, i + batchSize);
-    const reply = await complete([
+    const messages: LlmMessage[] = [
       {
         role: 'system',
         content: [
@@ -110,6 +133,7 @@ export const smartGrouper: SmartGrouper = async (entries, existingFolders) => {
           'Rules:',
           '- Prefer reusing an existing folder name when it fits.',
           '- Use short, human folder names (1-4 words). No slashes or special characters.',
+          '- Name folders in the language most item names are written in (e.g. Vietnamese names -> Vietnamese folder names, keeping diacritics).',
           '- Aim for 3-12 groups; avoid groups with a single item unless it clearly belongs alone.',
           '- Only move a [folder] when it clearly belongs inside a broader group (e.g. several project folders into "Projects").',
           '  Leave out folders that look like they belong to an app or are already a sensible top-level category.',
@@ -122,9 +146,8 @@ export const smartGrouper: SmartGrouper = async (entries, existingFolders) => {
         role: 'user',
         content: `Existing folders: ${[...folders].join(', ') || '(none)'}\n\nItems:\n${batch.map(describeEntry).join('\n')}`,
       },
-    ], { maxTokens: 4096, temperature: 0.1 });
-
-    const parsed = parseJsonObject(reply.content ?? '');
+    ];
+    const parsed = await completeJson(messages);
     for (const group of parsed.groups ?? []) {
       const names = group?.items ?? group?.files; // tolerate the older "files" key
       if (typeof group?.folder !== 'string' || !Array.isArray(names)) continue;

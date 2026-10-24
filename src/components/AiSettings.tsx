@@ -1,15 +1,8 @@
 import React, { useState } from 'react';
-import { CheckCircle2, KeyRound, Loader2, X, XCircle } from 'lucide-react';
+import { CheckCircle2, KeyRound, Loader2, Plus, X, XCircle } from 'lucide-react';
 import type { AiSettings as Settings } from '../../electron/ai-types';
 
 const NVIDIA_BASE_URL = 'https://integrate.api.nvidia.com/v1';
-const SUGGESTED_MODELS = [
-  'meta/llama-3.3-70b-instruct',
-  'meta/llama-3.1-405b-instruct',
-  'nvidia/llama-3.3-nemotron-super-49b-v1',
-  'qwen/qwen2.5-coder-32b-instruct',
-  'deepseek-ai/deepseek-r1',
-];
 
 interface Props {
   settings: Settings;
@@ -22,12 +15,14 @@ export function AiSettings({ settings, onSaved, onClose }: Props) {
   const [model, setModel] = useState(settings.model);
   const [baseUrl, setBaseUrl] = useState(settings.baseUrl);
   const [models, setModels] = useState<string[]>([]);
+  const [quickList, setQuickList] = useState<string[]>(settings.models);
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState<'save' | 'test' | 'models' | null>(null);
+  const available = new Set(models);
 
   // Save first so test/model listing use exactly what's on screen.
   const persist = async () => {
-    const update: Parameters<typeof window.api.ai.updateSettings>[0] = { model, baseUrl };
+    const update: Parameters<typeof window.api.ai.updateSettings>[0] = { model, baseUrl, models: quickList };
     if (apiKey.trim()) update.apiKey = apiKey.trim();
     const saved = await window.api.ai.updateSettings(update);
     setApiKey('');
@@ -56,8 +51,17 @@ export function AiSettings({ settings, onSaved, onClose }: Props) {
     await persist();
     const list = await window.api.ai.listModels();
     setModels(list);
-    setStatus({ ok: true, text: `${list.length} models available` });
+    const missing = quickList.filter(m => !list.includes(m));
+    setStatus({
+      ok: missing.length === 0,
+      text: `${list.length} models available on your account.` + (missing.length ? ` Not found: ${missing.join(', ')}. Remove them or check the exact ID.` : ''),
+    });
   });
+
+  const addToQuickList = () => {
+    const m = model.trim();
+    if (m && !quickList.includes(m)) setQuickList([...quickList, m]);
+  };
 
   const removeKey = () => run('save', async () => {
     onSaved(await window.api.ai.updateSettings({ apiKey: '' }));
@@ -88,16 +92,35 @@ export function AiSettings({ settings, onSaved, onClose }: Props) {
             </p>
           </div>
           <div className="form-group">
-            <label className="form-label">Model</label>
+            <label className="form-label">Active model</label>
             <div style={{ display: 'flex', gap: 8 }}>
-              <input className="form-input" list="ai-models" value={model} onChange={e => setModel(e.target.value)} />
-              <button className="btn" onClick={loadModels} disabled={!!busy} title="Load the model list from the API">
+              <input className="form-input" list="ai-models" value={model} onChange={e => setModel(e.target.value)} placeholder="e.g. google/gemma-4-31b-it" />
+              <button className="btn" onClick={addToQuickList} disabled={!model.trim() || quickList.includes(model.trim())} title="Add to the quick-switch list">
+                <Plus size={14} />
+              </button>
+              <button className="btn" onClick={loadModels} disabled={!!busy} title="Load the models your account can use, and check the quick list against it">
                 {busy === 'models' ? <Loader2 size={14} className="animate-spin" /> : 'List'}
               </button>
             </div>
             <datalist id="ai-models">
-              {(models.length ? models : SUGGESTED_MODELS).map(m => <option key={m} value={m} />)}
+              {(models.length ? models : quickList).map(m => <option key={m} value={m} />)}
             </datalist>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Quick-switch list (shown in the model dropdowns)</label>
+            <div className="model-chips">
+              {quickList.map(m => (
+                <span
+                  key={m}
+                  className={`model-chip ${m === model ? 'active' : ''} ${models.length && !available.has(m) ? 'missing' : ''}`}
+                  title={models.length && !available.has(m) ? 'Not available on your account' : 'Click to make active'}
+                >
+                  <button className="model-chip-name" onClick={() => setModel(m)}>{m}</button>
+                  <button className="model-chip-remove" onClick={() => setQuickList(quickList.filter(x => x !== m))} title="Remove from list"><X size={12} /></button>
+                </span>
+              ))}
+              {quickList.length === 0 && <span className="organizer-muted">Empty. Type a model ID above and press +.</span>}
+            </div>
           </div>
           <div className="form-group">
             <label className="form-label">API base URL</label>

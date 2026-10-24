@@ -8,6 +8,7 @@ import { joinPath, parentPath, isRoot, normalize, crumbs, validateName, uniqueCo
 import { formatSize, formatDate, errorText } from './lib/format';
 import { Organizer } from './components/Organizer';
 import { AiSettings } from './components/AiSettings';
+import { ModelPicker } from './components/ModelPicker';
 import type { ApplyResult, DirectoryAnalysis, OrganizeStrategy, PlanItem } from '../electron/organizer-types';
 import type { AiSettings as AiSettingsState } from '../electron/ai-types';
 
@@ -596,9 +597,11 @@ function App() {
             <div className="panel-header">
               <span className="panel-title"><Bot size={16} /> Agent Assistant</span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span className={`ai-badge ${aiSettings?.hasKey ? 'on' : ''}`} title={aiSettings?.hasKey ? `Using ${aiSettings.model}` : 'No AI model configured'}>
-                  {aiSettings?.hasKey ? `AI: ${aiSettings.model.split('/').pop()}` : 'AI off'}
-                </span>
+                {aiSettings?.hasKey ? (
+                  <ModelPicker settings={aiSettings} onChange={setAiSettings} onManage={() => setShowAiSettings(true)} disabled={agentLoading} />
+                ) : (
+                  <span className="ai-badge" title="No AI model configured">AI off</span>
+                )}
                 <button className="btn" onClick={() => setShowAiSettings(true)} title="AI settings (API key, model)"><Settings size={14} /></button>
               </span>
             </div>
@@ -691,6 +694,9 @@ function App() {
             strategy={organizeStrategy}
             aiEnabled={!!aiSettings?.hasKey}
             aiModel={aiSettings?.model}
+            modelPicker={aiSettings?.hasKey ? (
+              <ModelPicker settings={aiSettings} onChange={setAiSettings} onManage={() => setShowAiSettings(true)} disabled={analyzing} />
+            ) : null}
             readContents={readContents}
             onReadContentsChange={changeReadContents}
             lastResult={lastOrganize}
