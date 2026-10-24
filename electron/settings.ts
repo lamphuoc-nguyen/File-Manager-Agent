@@ -36,13 +36,28 @@ function save(s: StoredSettings) {
   writeFileSync(settingsPath(), JSON.stringify(s, null, 2));
 }
 
+// safeStorage is async-only from Electron 46, so the key is decrypted once (initApiKey) and kept
+// here; getApiKey/getSettings stay synchronous for their callers.
+let cachedKey: string | undefined;
+
+/** Decrypts the saved key into memory. Call once at startup, before any IPC can use the key. */
+export async function initApiKey(): Promise<void> {
+  cachedKey = undefined;
+  const s = load();
+  if (!s.apiKeyEnc) return;
+  try {
+    const { result, shouldReEncrypt } = await safeStorage.decryptStringAsync(Buffer.from(s.apiKeyEnc, 'base64'));
+    cachedKey = result;
+    if (shouldReEncrypt) {
+      const apiKeyEnc = (await safeStorage.encryptStringAsync(result)).toString('base64');
+      save({ ...load(), apiKeyEnc });
+    }
+  } catch { } // undecryptable (e.g. another Windows user): fall back to the env var
+}
+
 /** The key never leaves the main process; falls back to the NVIDIA_API_KEY env var. */
 export function getApiKey(): string | undefined {
-  const s = load();
-  if (s.apiKeyEnc) {
-    try { return safeStorage.decryptString(Buffer.from(s.apiKeyEnc, 'base64')); } catch { }
-  }
-  return process.env.NVIDIA_API_KEY || undefined;
+  return cachedKey || process.env.NVIDIA_API_KEY || undefined;
 }
 
 export function getSettings(): AiSettings {
@@ -73,20 +88,27 @@ function normalizeBaseUrl(input: string): string {
   return value;
 }
 
-export function updateSettings(update: AiSettingsUpdate): AiSettings {
+export async function updateSettings(update: AiSettingsUpdate): Promise<AiSettings> {
+  // Validate and encrypt first. Nothing may be awaited between load() and save(), or two
+  // updates in flight (e.g. a model switch while a key is saved) would overwrite each other.
+  const baseUrl = update.baseUrl !== undefined ? normalizeBaseUrl(update.baseUrl) : undefined;
+  const key = update.apiKey?.trim();
+  let apiKeyEnc: string | undefined;
+  if (key) {
+    if (!(await safeStorage.isAsyncEncryptionAvailable())) throw new Error('Secure storage is not available on this system');
+    apiKeyEnc = (await safeStorage.encryptStringAsync(key)).toString('base64');
+  }
+
   const s = load();
-  if (update.baseUrl !== undefined) s.baseUrl = normalizeBaseUrl(update.baseUrl);
+  if (baseUrl !== undefined) s.baseUrl = baseUrl;
   if (update.model !== undefined) s.model = update.model.trim() || DEFAULT_MODEL;
   if (update.thinking !== undefined) s.thinking = update.thinking;
   if (update.models !== undefined) s.models = [...new Set(update.models.map(m => m.trim()).filter(Boolean))];
-  if (update.apiKey !== undefined) {
-    const key = update.apiKey.trim();
-    if (!key) delete s.apiKeyEnc;
-    else {
-      if (!safeStorage.isEncryptionAvailable()) throw new Error('Secure storage is not available on this system');
-      s.apiKeyEnc = safeStorage.encryptString(key).toString('base64');
-    }
+  if (key !== undefined) {
+    if (apiKeyEnc) s.apiKeyEnc = apiKeyEnc;
+    else delete s.apiKeyEnc;
   }
   save(s);
+  if (key !== undefined) cachedKey = key || undefined;
   return getSettings();
 }

@@ -5,7 +5,7 @@ import { writeFileSync, mkdirSync } from 'fs';
 import { createAgentRegistryManager, FILESYSTEM_TOOLS, type AgentConfig, type ToolResult } from './lib/agent-manager/src/index.js';
 import * as fsOps from './fs-ops.js';
 import { analyzeDirectory, applyPlan, undoApply, type OrganizeStrategy, type PlanItem, type ApplyResult, type AnalyzeOptions } from './organizer.js';
-import { getSettings, updateSettings } from './settings.js';
+import { getSettings, initApiKey, updateSettings } from './settings.js';
 import { chat, listModels, smartGrouper, testConnection } from './llm.js';
 import type { AiChatMessage, AiSettingsUpdate } from './ai-types.js';
 
@@ -49,7 +49,8 @@ function createWindow() {
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  await initApiKey(); // before the window exists, so no IPC can run without the key
   registryManager.registerAllDiscovered();
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

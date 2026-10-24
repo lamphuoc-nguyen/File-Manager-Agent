@@ -40,7 +40,7 @@ app.whenReady().then(async () => {
     ok('binary .txt -> null', (await ex('weird.txt')) === null);
     ok('corrupt .docx -> null (no crash)', (await ex('broken.docx')) === null);
 
-    settings.updateSettings({ apiKey: 'nvapi-test-123', baseUrl: 'http://127.0.0.1:8765/v1' });
+    await settings.updateSettings({ apiKey: 'nvapi-test-123', baseUrl: 'http://127.0.0.1:8765/v1' });
 
     // --- Smart organize WITHOUT reading contents: names alone say nothing ---
     const blind = await org.analyzeDirectory(d, 'smart', llm.smartGrouper, { readContents: false });

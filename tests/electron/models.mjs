@@ -32,27 +32,27 @@ app.whenReady().then(async () => {
   const d = mkdtempSync(TMP + 'mdtest-fx-');
   try {
     for (const f of ['hoa_don_thang_9.pdf', 'hóa đơn điện.pdf', 'bao_cao_quy3.docx']) writeFileSync(join(d, f), f);
-    settings.updateSettings({ apiKey: 'nvapi-test-123', baseUrl: 'http://127.0.0.1:8766/v1' });
+    await settings.updateSettings({ apiKey: 'nvapi-test-123', baseUrl: 'http://127.0.0.1:8766/v1' });
 
     const s = settings.getSettings();
     ok(`default quick list: ${s.models.join(', ')}`, s.models.includes('google/gemma-4-31b-it') && s.models.includes(s.model));
-    settings.updateSettings({ models: ['a/one', 'b/two', 'a/one', '  '] });
+    await settings.updateSettings({ models: ['a/one', 'b/two', 'a/one', '  '] });
     ok('quick list deduped and trimmed, active model kept in list', JSON.stringify(settings.getSettings().models) === JSON.stringify([s.model, 'a/one', 'b/two']));
 
     for (const model of ['google/gemma-4-31b-it', 'nvidia/nemotron-3.5-lightning-30b-a3b']) {
-      settings.updateSettings({ model });
+      await settings.updateSettings({ model });
       const a = await org.analyzeDirectory(d, 'smart', llm.smartGrouper);
       ok(`switch to ${model}: request used it`, seen.at(-1).model === model);
       ok('  Vietnamese folder name with diacritics kept', a.plan.filter(p => p.destination?.includes('Hóa đơn')).length === 2);
     }
     ok('prompt asks for folder names in the files\' language', seen.at(-1).messages[0].content.includes('Write ALL folder names in Vietnamese'));
 
-    settings.updateSettings({ model: 'flaky/model' });
+    await settings.updateSettings({ model: 'flaky/model' });
     const before = seen.length;
     const a = await org.analyzeDirectory(d, 'smart', llm.smartGrouper);
     ok('broken JSON -> one retry -> success', seen.length - before === 2 && a.plan.filter(p => p.kind === 'move').length === 2);
 
-    settings.updateSettings({ model: 'thinker/model' });
+    await settings.updateSettings({ model: 'thinker/model' });
     try { await org.analyzeDirectory(d, 'smart', llm.smartGrouper); ok('token limit error', false); }
     catch (e) { ok(`token limit -> "${e.message.slice(0, 80)}…"`, /ran out of output tokens/.test(e.message)); }
   } catch (e) { console.log('ERROR', e.stack); }

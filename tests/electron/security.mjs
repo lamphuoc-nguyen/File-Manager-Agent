@@ -67,7 +67,7 @@ app.whenReady().then(async () => {
     mkdirSync(join(d, '.ssh')); writeFileSync(join(d, '.ssh', 'config'), 'Host CANARY12');
     mkdirSync(join(d, 'webapp', 'src'), { recursive: true }); writeFileSync(join(d, 'webapp', 'id_rsa'), 'x'); writeFileSync(join(d, 'webapp', 'package.json'), '{}');
 
-    settings.updateSettings({ apiKey: 'nvapi-test-123', baseUrl: 'http://127.0.0.1:8767/v1' });
+    await settings.updateSettings({ apiKey: 'nvapi-test-123', baseUrl: 'http://127.0.0.1:8767/v1' });
 
     // --- Organize with "Read file contents" on ---
     const a = await org.analyzeDirectory(d, 'smart', llm.smartGrouper, { readContents: true });

@@ -13,6 +13,7 @@ const SUITES = [
   ['models.mjs', 'electron'],
   ['security.mjs', 'electron'],
   ['errors.mjs', 'electron'],
+  ['settings-keys.mjs', 'electron'],
   ['ui-organize.mjs', 'node'], // drives a real app window over the DevTools protocol
 ];
 const only = process.argv.slice(2);

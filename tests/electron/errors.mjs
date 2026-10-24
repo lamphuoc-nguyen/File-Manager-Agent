@@ -34,16 +34,16 @@ app.whenReady().then(async () => {
     ok('bad URL did not overwrite the saved one', settings.getSettings().baseUrl === 'https://integrate.api.nvidia.com/v1');
 
     // Real NVIDIA endpoint with an obviously fake key: must say the key is rejected.
-    settings.updateSettings({ apiKey: 'nvapi-this-is-not-a-real-key-000000000000' });
+    await settings.updateSettings({ apiKey: 'nvapi-this-is-not-a-real-key-000000000000' });
     await expectError('real NVIDIA + fake key', () => llm.testConnection(), /API key rejected/);
 
-    settings.updateSettings({ baseUrl: 'http://127.0.0.1:8768/html' });
+    await settings.updateSettings({ baseUrl: 'http://127.0.0.1:8768/html' });
     await expectError('web page response', () => llm.testConnection(), /returned a web page/);
-    settings.updateSettings({ baseUrl: 'http://127.0.0.1:8768/gone' });
+    await settings.updateSettings({ baseUrl: 'http://127.0.0.1:8768/gone' });
     await expectError('retired model (410)', () => llm.testConnection(), /retired by NVIDIA/);
-    settings.updateSettings({ baseUrl: 'http://127.0.0.1:1' });
+    await settings.updateSettings({ baseUrl: 'http://127.0.0.1:1' });
     await expectError('unreachable server', () => llm.testConnection(), /Cannot reach/);
-    settings.updateSettings({ baseUrl: 'http://127.0.0.1:8768/slow' });
+    await settings.updateSettings({ baseUrl: 'http://127.0.0.1:8768/slow' });
     const t = Date.now();
     await expectError('timeout', () => llm.testConnection(), /No answer from .* within 60s/);
     ok(`test timeout is ~60s (${Math.round((Date.now() - t) / 1000)}s)`, Date.now() - t < 70_000);
