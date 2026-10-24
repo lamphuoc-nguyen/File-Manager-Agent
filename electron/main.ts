@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { writeFileSync, mkdirSync } from 'fs';
 import { createAgentRegistryManager, FILESYSTEM_TOOLS, type AgentConfig, type ToolResult } from './lib/agent-manager/src/index.js';
 import * as fsOps from './fs-ops.js';
+import { analyzeDirectory, applyPlan, undoApply, type OrganizeStrategy, type PlanItem, type ApplyResult } from './organizer.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -69,6 +70,11 @@ ipcMain.handle('fs:grep', async (_, root: string, pattern: string, filePattern?:
 ipcMain.handle('fs:open', async (_, path: string) => fsOps.open(path));
 ipcMain.handle('fs:showInFolder', async (_, path: string) => fsOps.showInFolder(path));
 
+// ===== Organizer IPC Handlers =====
+ipcMain.handle('organize:analyze', async (_, path: string, strategy?: OrganizeStrategy) => analyzeDirectory(path, strategy));
+ipcMain.handle('organize:apply', async (_, items: PlanItem[]) => applyPlan(items));
+ipcMain.handle('organize:undo', async (_, result: ApplyResult) => undoApply(result));
+
 ipcMain.handle('dialog:openDirectory', async () => {
   const result = await dialog.showOpenDialog(mainWindow!, { properties: ['openDirectory'] });
   return result.filePaths[0] || null;
@@ -105,6 +111,8 @@ async function runTool(toolName: string, args: Record<string, any>): Promise<any
     case 'fs_stat': return fsOps.stat(args.path);
     case 'fs_search': return fsOps.search(args.root, args.pattern, args.maxResults);
     case 'fs_grep': return fsOps.grep(args.root, args.pattern, args.filePattern, args.maxResults);
+    case 'fs_analyze': return analyzeDirectory(args.path, args.strategy);
+    case 'fs_organize': return applyPlan(args.items);
     default: throw new Error(`Tool ${toolName} is not implemented`);
   }
 }

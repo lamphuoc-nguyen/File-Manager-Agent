@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { OrganizeStrategy, DirectoryAnalysis, PlanItem, ApplyResult } from './organizer-types.js';
 
 const api = {
   // Filesystem
@@ -18,6 +19,13 @@ const api = {
     grep: (root: string, pattern: string, filePattern?: string, maxResults?: number): Promise<any[]> => ipcRenderer.invoke('fs:grep', root, pattern, filePattern, maxResults),
     open: (path: string): Promise<{ success: boolean }> => ipcRenderer.invoke('fs:open', path),
     showInFolder: (path: string): Promise<{ success: boolean }> => ipcRenderer.invoke('fs:showInFolder', path),
+  },
+
+  // Directory analysis & organization
+  organize: {
+    analyze: (path: string, strategy?: OrganizeStrategy): Promise<DirectoryAnalysis> => ipcRenderer.invoke('organize:analyze', path, strategy),
+    apply: (items: PlanItem[]): Promise<ApplyResult> => ipcRenderer.invoke('organize:apply', items),
+    undo: (result: ApplyResult): Promise<ApplyResult> => ipcRenderer.invoke('organize:undo', result),
   },
 
   // Dialogs

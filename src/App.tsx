@@ -2,9 +2,12 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Folder, File, ChevronRight, ChevronDown, Home, HardDrive, RefreshCw, ArrowUp,
   Plus, Trash2, Edit, Copy, Scissors, ClipboardPaste, Bot, MessageSquare,
-  Send, Loader2, X, LayoutGrid, List, FolderOpen
+  Send, Loader2, X, LayoutGrid, List, FolderOpen, Sparkles
 } from 'lucide-react';
 import { joinPath, parentPath, isRoot, normalize, crumbs, validateName, uniqueCopyName, baseName } from './lib/paths';
+import { formatSize, formatDate } from './lib/format';
+import { Organizer } from './components/Organizer';
+import type { ApplyResult, DirectoryAnalysis, OrganizeStrategy, PlanItem } from '../electron/organizer-types';
 
 interface FileItem {
   name: string;
@@ -79,6 +82,10 @@ function App() {
   const [agentLoading, setAgentLoading] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [dialog, setDialog] = useState<DialogState | null>(null);
+  const [organizerOpen, setOrganizerOpen] = useState(false);
+  const [analysis, setAnalysis] = useState<DirectoryAnalysis | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [lastOrganize, setLastOrganize] = useState<ApplyResult | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const listRequest = useRef(0);
   const toastTimer = useRef<number>();
@@ -268,6 +275,61 @@ function App() {
     }
   };
 
+  // ===== Organize =====
+  const summarizeAnalysis = (a: DirectoryAnalysis) => {
+    const moves = a.plan.filter(i => i.kind === 'move');
+    const folders = new Set(moves.map(i => baseName(parentPath(i.destination!))));
+    const dupes = a.duplicateGroups.reduce((n, g) => n + g.paths.length - 1, 0);
+    const lines = [
+      ...(a.warning ? [`⚠ ${a.warning} I've unticked everything.\n`] : []),
+      `${baseName(a.root)}: ${a.totalFiles} files (${formatSize(a.totalSize)}), ${a.totalFolders} folders.`,
+      ...a.categories.slice(0, 6).map(c => `• ${c.category}: ${c.count} (${formatSize(c.size)})`),
+      moves.length ? `\nI'd move ${moves.length} files into ${folders.size} folders: ${[...folders].slice(0, 8).join(', ')}${folders.size > 8 ? '…' : ''}.` : '\nNo loose files to sort.',
+    ];
+    if (dupes) lines.push(`Found ${dupes} duplicate file${dupes > 1 ? 's' : ''} (same content).`);
+    if (a.emptyFolders.length) lines.push(`Found ${a.emptyFolders.length} empty folder${a.emptyFolders.length > 1 ? 's' : ''}.`);
+    if (a.plan.length) lines.push('Review the plan in the Organize window, untick anything you want to keep, then Apply.');
+    return lines.join('\n');
+  };
+
+  const analyzeFolder = async (strategy: OrganizeStrategy = analysis?.strategy ?? 'type', path = currentPath) => {
+    setOrganizerOpen(true);
+    setAnalyzing(true);
+    try {
+      const result = await window.api.organize.analyze(path, strategy);
+      setAnalysis(result);
+      return result;
+    } catch (e: any) {
+      showToastMsg(e.message, 'error');
+      return null;
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const applyOrganize = async (items: PlanItem[]) => {
+    const result = await window.api.organize.apply(items);
+    setLastOrganize(result);
+    const ok = result.applied.filter(i => i.ok).length;
+    showToastMsg(`Organized: ${ok} of ${result.applied.length} changes applied`, ok === result.applied.length ? 'success' : 'error');
+    setChatMessages(prev => [...prev, { role: 'agent', content: `Done — applied ${ok} of ${result.applied.length} changes. Say "undo" to put the moved files back.` }]);
+    refresh();
+    if (analysis) await analyzeFolder(analysis.strategy, analysis.root);
+  };
+
+  const undoOrganize = async () => {
+    if (!lastOrganize) return;
+    const result = await window.api.organize.undo(lastOrganize);
+    setLastOrganize(null);
+    const ok = result.applied.filter(i => i.ok).length;
+    const trashed = lastOrganize.applied.filter(i => i.ok && i.kind === 'trash').length;
+    const msg = `Undo: moved ${ok} file${ok === 1 ? '' : 's'} back` + (trashed ? `. ${trashed} item(s) sent to the Recycle Bin must be restored from there.` : '.');
+    showToastMsg(msg, 'success');
+    setChatMessages(prev => [...prev, { role: 'agent', content: msg }]);
+    refresh();
+    if (organizerOpen && analysis) await analyzeFolder(analysis.strategy, analysis.root);
+  };
+
   // ===== Agent Operations =====
   const loadAgents = async () => {
     try {
@@ -306,7 +368,21 @@ function App() {
       const lower = userMsg.toLowerCase();
       const quoted = (re: RegExp) => userMsg.match(re)?.[1]?.trim();
 
-      if (/\b(grep|search content|search in files)\b/.test(lower)) {
+      if (/^\s*undo\b/.test(lower)) {
+        if (lastOrganize) { await undoOrganize(); return; }
+        response = 'There is no organize action to undo.';
+      } else if (/\b(organi[sz]e|analy[sz]e|tidy|clean\s*up|sort (out|this|these|my)|declutter)\b/.test(lower)) {
+        const strategy: OrganizeStrategy = /\b(date|month|year|when)\b/.test(lower) ? 'date' : /\bextension/.test(lower) ? 'extension' : 'type';
+        const args = { path: currentPath, strategy };
+        setOrganizerOpen(true);
+        setAnalyzing(true);
+        const result = await window.api.agent.execute(selectedAgent, 'fs_analyze', args).finally(() => setAnalyzing(false));
+        if (result.success) {
+          setAnalysis(result.data);
+          response = summarizeAnalysis(result.data);
+        } else response = `Failed: ${result.error}`;
+        addToolMessage(`Analyzed ${currentPath}`, 'fs_analyze', args, result.success ? `${result.data.plan.length} plan items` : result);
+      } else if (/\b(grep|search content|search in files)\b/.test(lower)) {
         const pattern = quoted(/(?:grep|search content|search in files)\s+(?:for\s+)?["']?([^"'\n]+)["']?/i);
         if (pattern) {
           const args = { root: currentPath, pattern };
@@ -365,7 +441,7 @@ function App() {
         } else response = `Failed: ${result.error}`;
         addToolMessage(response, 'fs_list', args, result.success ? `${result.data.length} items` : result);
       } else {
-        response = `I can help you manage files in ${currentPath}. Try asking me to:\n• "List files" or "Show what's here"\n• "Create a folder called myfolder"\n• "Delete file.txt"\n• "Find *.ts"\n• "Grep for functionName" (search content)`;
+        response = `I can help you manage files in ${currentPath}. Try asking me to:\n• "Organize this folder" (or "organize by date")\n• "List files" or "Show what's here"\n• "Create a folder called myfolder"\n• "Delete file.txt"\n• "Find *.ts"\n• "Grep for functionName" (search content)`;
       }
 
       setChatMessages(prev => [...prev, { role: 'agent', content: response }]);
@@ -380,15 +456,6 @@ function App() {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); }
   };
 
-  const formatSize = (bytes: number) => {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-    if (bytes < 1024 * 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
-    return (bytes / 1024 / 1024 / 1024).toFixed(1) + ' GB';
-  };
-
-  const formatDate = (iso: string) => (iso ? new Date(iso).toLocaleString() : '');
-
   const pathCrumbs = crumbs(currentPath);
 
   return (
@@ -400,6 +467,7 @@ function App() {
           <button className="btn" onClick={refresh} title="Refresh (F5)" disabled={loading}><RefreshCw size={16} className={loading ? 'animate-spin' : ''} /></button>
           <button className="btn" onClick={handleNewFolder} title="New Folder (Ctrl+Shift+N)" disabled={!currentPath}><Plus size={16} /></button>
           <button className="btn" onClick={handlePaste} title="Paste (Ctrl+V)" disabled={!clipboard}><ClipboardPaste size={16} /></button>
+          <button className="btn" onClick={() => analyzeFolder()} title="Analyze & organize this folder" disabled={!currentPath}><Sparkles size={16} /> Organize</button>
         </div>
         <div className="path-bar">
           {pathCrumbs.map((c, i) => (
@@ -565,6 +633,18 @@ function App() {
           <div style={{ position: 'fixed', bottom: 20, right: 20, zIndex: 1001, padding: '12px 16px', background: 'var(--bg-elevated)', border: `1px solid ${toast.type === 'success' ? 'var(--success)' : toast.type === 'error' ? 'var(--danger)' : 'var(--accent)'}`, borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', animation: 'slideIn 0.2s' }}>
             {toast.message}
           </div>
+        )}
+
+        {organizerOpen && (
+          <Organizer
+            analysis={analysis}
+            analyzing={analyzing}
+            lastResult={lastOrganize}
+            onAnalyze={strategy => analyzeFolder(strategy, analysis?.root ?? currentPath)}
+            onApply={applyOrganize}
+            onUndo={undoOrganize}
+            onClose={() => setOrganizerOpen(false)}
+          />
         )}
 
         {dialog && <Dialog dialog={dialog} onClose={() => setDialog(null)} />}

@@ -1,0 +1,202 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, ChevronDown, ChevronRight, Folder, Loader2, RefreshCw, Sparkles, Trash2, Undo2, X } from 'lucide-react';
+import type { ApplyResult, DirectoryAnalysis, OrganizeStrategy, PlanItem } from '../../electron/organizer-types';
+import { baseName, parentPath } from '../lib/paths';
+import { formatSize } from '../lib/format';
+
+const STRATEGIES: { value: OrganizeStrategy; label: string }[] = [
+  { value: 'type', label: 'By type (Images, Documents…)' },
+  { value: 'date', label: 'By month modified' },
+  { value: 'extension', label: 'By extension' },
+];
+
+const TRASH_GROUP = 'Recycle Bin';
+
+interface Props {
+  analysis: DirectoryAnalysis | null;
+  analyzing: boolean;
+  lastResult: ApplyResult | null;
+  onAnalyze: (strategy: OrganizeStrategy) => void;
+  onApply: (items: PlanItem[]) => Promise<void>;
+  onUndo: () => Promise<void>;
+  onClose: () => void;
+}
+
+export function Organizer({ analysis, analyzing, lastResult, onAnalyze, onApply, onUndo, onClose }: Props) {
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const strategy = analysis?.strategy ?? 'type';
+
+  // Reset selection to the recommended items whenever a new analysis arrives.
+  useEffect(() => {
+    setChecked(new Set(analysis?.plan.filter(i => i.recommended).map(i => i.id)));
+    setCollapsed(new Set());
+  }, [analysis]);
+
+  // Group moves by target folder; trash items go in their own group at the end.
+  const groups = useMemo(() => {
+    const map = new Map<string, PlanItem[]>();
+    for (const item of analysis?.plan ?? []) {
+      const key = item.kind === 'trash' ? TRASH_GROUP : baseName(parentPath(item.destination!));
+      map.set(key, [...(map.get(key) ?? []), item]);
+    }
+    return [...map.entries()].sort(([a], [b]) => (a === TRASH_GROUP ? 1 : b === TRASH_GROUP ? -1 : a.localeCompare(b)));
+  }, [analysis]);
+
+  const toggle = (ids: string[], on: boolean) => setChecked(prev => {
+    const next = new Set(prev);
+    ids.forEach(id => (on ? next.add(id) : next.delete(id)));
+    return next;
+  });
+
+  const run = async (fn: () => Promise<void>) => {
+    setBusy(true);
+    try { await fn(); } finally { setBusy(false); }
+  };
+
+  const selectedItems = analysis?.plan.filter(i => checked.has(i.id)) ?? [];
+  const trashCount = selectedItems.filter(i => i.kind === 'trash').length;
+  const failed = lastResult?.applied.filter(i => !i.ok) ?? [];
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-wide" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+            <Sparkles size={16} />
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Organize {analysis ? baseName(analysis.root) : ''}</span>
+          </span>
+          <button className="btn" onClick={onClose}><X size={16} /></button>
+        </div>
+
+        <div className="modal-body organizer">
+          <div className="organizer-controls">
+            <select className="form-input" value={strategy} onChange={e => onAnalyze(e.target.value as OrganizeStrategy)} disabled={analyzing || busy}>
+              {STRATEGIES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+            </select>
+            <button className="btn" onClick={() => onAnalyze(strategy)} disabled={analyzing || busy} title="Re-analyze">
+              <RefreshCw size={14} className={analyzing ? 'animate-spin' : ''} />
+            </button>
+          </div>
+
+          {analyzing && !analysis && (
+            <div className="organizer-empty"><Loader2 size={20} className="animate-spin" /> Analyzing…</div>
+          )}
+
+          {analysis && (
+            <>
+              {analysis.warning && (
+                <div className="organizer-warning">
+                  <AlertTriangle size={16} style={{ flexShrink: 0 }} />
+                  <span>{analysis.warning} Nothing is ticked; tick only items you're sure about.</span>
+                </div>
+              )}
+              <div className="organizer-stats">
+                <Stat label="Files" value={analysis.totalFiles} />
+                <Stat label="Folders" value={analysis.totalFolders} />
+                <Stat label="Total size" value={formatSize(analysis.totalSize)} />
+                <Stat label="Duplicates" value={analysis.duplicateGroups.reduce((n, g) => n + g.paths.length - 1, 0)} />
+                <Stat label="Empty folders" value={analysis.emptyFolders.length} />
+              </div>
+
+              {analysis.categories.length > 0 && (
+                <div className="organizer-categories">
+                  {analysis.categories.map(c => (
+                    <div key={c.category} className="organizer-cat">
+                      <span className="organizer-cat-name">{c.category}</span>
+                      <span className="organizer-cat-bar"><span style={{ width: `${Math.max(2, (c.size / (analysis.totalSize || 1)) * 100)}%` }} /></span>
+                      <span className="organizer-cat-meta">{c.count} · {formatSize(c.size)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {analysis.plan.length === 0 ? (
+                <div className="organizer-empty">Nothing to organize here — there are no loose files at the top level.</div>
+              ) : (
+                <div className="organizer-plan">
+                  {groups.map(([group, items]) => {
+                    const ids = items.map(i => i.id);
+                    const onCount = ids.filter(id => checked.has(id)).length;
+                    const isOpen = !collapsed.has(group);
+                    return (
+                      <div key={group} className="organizer-group">
+                        <div className="organizer-group-header">
+                          <button className="tree-toggle" onClick={() => setCollapsed(prev => { const n = new Set(prev); n.has(group) ? n.delete(group) : n.add(group); return n; })}>
+                            {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                          </button>
+                          <input
+                            type="checkbox"
+                            checked={onCount === ids.length}
+                            ref={el => { if (el) el.indeterminate = onCount > 0 && onCount < ids.length; }}
+                            onChange={e => toggle(ids, e.target.checked)}
+                          />
+                          {group === TRASH_GROUP ? <Trash2 size={14} color="var(--danger)" /> : <Folder size={14} color="#f9d449" />}
+                          <strong>{group}</strong>
+                          <span className="organizer-muted">{onCount}/{ids.length}</span>
+                        </div>
+                        {isOpen && items.map(item => (
+                          <label key={item.id} className="organizer-item">
+                            <input type="checkbox" checked={checked.has(item.id)} onChange={e => toggle([item.id], e.target.checked)} />
+                            <span className="organizer-item-name" title={item.source}>{baseName(item.source)}</span>
+                            {item.destination && baseName(item.destination) !== baseName(item.source) && (
+                              <span className="organizer-muted">→ {baseName(item.destination)}</span>
+                            )}
+                            <span className="organizer-muted organizer-reason">{item.reason}</span>
+                          </label>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {analysis.skipped.length > 0 && (
+                <p className="organizer-muted" style={{ marginTop: 8 }}>
+                  Skipped {analysis.skipped.length} hidden, system or temporary file{analysis.skipped.length > 1 ? 's' : ''}. Existing folders are never moved.
+                </p>
+              )}
+            </>
+          )}
+
+          {lastResult && (
+            <div className="organizer-result">
+              Applied {lastResult.applied.length - failed.length} of {lastResult.applied.length} changes.
+              {failed.length > 0 && (
+                <ul>{failed.slice(0, 5).map(f => <li key={f.id}>{baseName(f.source)}: {f.error}</li>)}</ul>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="modal-footer">
+          {lastResult && lastResult.applied.some(i => i.ok && i.kind === 'move') && (
+            <button className="btn" onClick={() => run(onUndo)} disabled={busy} style={{ marginRight: 'auto' }}>
+              <Undo2 size={14} /> Undo last organize
+            </button>
+          )}
+          <button className="btn" onClick={onClose}>Close</button>
+          <button
+            className={`btn ${trashCount ? 'btn-danger' : 'btn-primary'}`}
+            onClick={() => run(() => onApply(selectedItems))}
+            disabled={busy || analyzing || selectedItems.length === 0}
+          >
+            {busy && <Loader2 size={14} className="animate-spin" />}
+            Apply {selectedItems.length} change{selectedItems.length === 1 ? '' : 's'}
+            {trashCount > 0 && ` (${trashCount} to Recycle Bin)`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="organizer-stat">
+      <span className="organizer-stat-value">{value}</span>
+      <span className="organizer-muted">{label}</span>
+    </div>
+  );
+}

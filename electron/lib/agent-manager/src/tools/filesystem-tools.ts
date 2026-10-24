@@ -152,6 +152,33 @@ export const FILESYSTEM_TOOLS: ToolConfig[] = [
     enabled: true,
   },
   {
+    name: 'fs_analyze',
+    description: 'Analyze a directory and propose an organization plan (file categories, duplicates, empty folders). Does not change anything.',
+    type: 'function',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Directory to analyze (top level only)' },
+        strategy: { type: 'string', enum: ['type', 'date', 'extension'], default: 'type', description: 'Group files by type (Images, Documents...), by month modified, or by extension' },
+      },
+      required: ['path'],
+    },
+    enabled: true,
+  },
+  {
+    name: 'fs_organize',
+    description: 'Apply plan items returned by fs_analyze (moves files, sends duplicates/empty folders to the Recycle Bin). Requires user confirmation.',
+    type: 'function',
+    parameters: {
+      type: 'object',
+      properties: {
+        items: { type: 'array', description: 'Plan items from fs_analyze to apply' },
+      },
+      required: ['items'],
+    },
+    enabled: true,
+  },
+  {
     name: 'fs_watch',
     description: 'Watch a directory for changes (returns event stream)',
     type: 'function',
