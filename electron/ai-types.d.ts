@@ -10,12 +10,15 @@ export interface AiSettings {
   /** e.g. "nvapi-…a1b2", for display only; the full key never reaches the renderer. */
   keyHint?: string;
   keySource?: 'saved' | 'env';
+  /** Let reasoning models think before answering (slower, many more tokens). Off by default. */
+  thinking: boolean;
 }
 
 export interface AiSettingsUpdate {
   baseUrl?: string;
   model?: string;
   models?: string[];
+  thinking?: boolean;
   /** Empty string removes the saved key. */
   apiKey?: string;
 }

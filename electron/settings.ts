@@ -18,6 +18,7 @@ interface StoredSettings {
   baseUrl: string;
   model: string;
   models?: string[];
+  thinking?: boolean;
   /** API key encrypted with safeStorage (DPAPI on Windows), base64. */
   apiKeyEnc?: string;
 }
@@ -55,6 +56,7 @@ export function getSettings(): AiSettings {
     hasKey: !!key,
     keyHint: key ? `${key.slice(0, 6)}…${key.slice(-4)}` : undefined,
     keySource: s.apiKeyEnc ? 'saved' : key ? 'env' : undefined,
+    thinking: s.thinking ?? false,
   };
 }
 
@@ -75,6 +77,7 @@ export function updateSettings(update: AiSettingsUpdate): AiSettings {
   const s = load();
   if (update.baseUrl !== undefined) s.baseUrl = normalizeBaseUrl(update.baseUrl);
   if (update.model !== undefined) s.model = update.model.trim() || DEFAULT_MODEL;
+  if (update.thinking !== undefined) s.thinking = update.thinking;
   if (update.models !== undefined) s.models = [...new Set(update.models.map(m => m.trim()).filter(Boolean))];
   if (update.apiKey !== undefined) {
     const key = update.apiKey.trim();

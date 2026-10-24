@@ -81,7 +81,22 @@ export interface SmartEntry {
 export type SmartGrouper = (
   entries: SmartEntry[],
   existingFolders: string[],
+  hints: { language?: 'Vietnamese' },
 ) => Promise<Map<string, { folder: string; reason: string }>>;
+
+// The AI can't see inside these, so in smart mode they're sorted by type without asking it.
+const MEDIA_CATEGORIES = new Set(['Images', 'Videos', 'Audio', 'Installers', 'Archives', 'Fonts']);
+const VIETNAMESE_LABELS: Record<string, string> = {
+  Images: 'Hình ảnh', Videos: 'Video', Audio: 'Âm thanh', Installers: 'Bộ cài đặt', Archives: 'File nén', Fonts: 'Phông chữ',
+};
+const VI_CHARS = /[ăâđêôơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]/i;
+const VI_WORDS = /(^|[^a-z])(hoa[ _-]?don|bao[ _-]?cao|thang|tai[ _-]?lieu|hop[ _-]?dong|ghi[ _-]?chu|chi[ _-]?tieu|cong[ _-]?ty|thue|anh)([^a-z]|$)/i;
+
+/** Vietnamese if a fifth of the names/excerpts look Vietnamese (with or without diacritics). */
+function detectLanguage(texts: string[]): 'Vietnamese' | undefined {
+  const vi = texts.filter(t => VI_CHARS.test(t) || VI_WORDS.test(t)).length;
+  return texts.length && vi / texts.length >= 0.2 ? 'Vietnamese' : undefined;
+}
 
 const EXCERPT_CHARS = 1200;
 const FOLDER_SAMPLE = 15;
@@ -208,10 +223,11 @@ export async function analyzeDirectory(
   let contentsRead = 0;
   let secretsWithheld = 0;
   let smart: Map<string, { folder: string; reason: string }> | null = null;
+  let language: 'Vietnamese' | undefined;
   if (strategy === 'smart') {
     const smartEntries: SmartEntry[] = [];
     for (const f of files) {
-      if (duplicatesToTrash.has(f.path)) continue;
+      if (duplicatesToTrash.has(f.path) || MEDIA_CATEGORIES.has(categoryOf(f.name))) continue;
       let excerpt: string | null = null;
       if (options.readContents && canExtract(f.path)) {
         const read = await extractTextForAi(f.path, EXCERPT_CHARS);
@@ -222,7 +238,10 @@ export async function analyzeDirectory(
       smartEntries.push({ kind: 'file', name: f.name, size: f.size, modified: f.modified.toISOString(), excerpt: excerpt ?? undefined });
     }
     for (const d of folders) smartEntries.push({ kind: 'folder', name: d.name, size: 0, modified: d.modified.toISOString(), contains: d.contains });
-    smart = await smartGrouper!(smartEntries, [...folders.map(d => d.name), ...emptyFolders.map(p => basename(p))]);
+    language = detectLanguage([...files.map(f => f.name), ...smartEntries.map(e => e.excerpt ?? '')].filter(Boolean));
+    smart = smartEntries.length
+      ? await smartGrouper!(smartEntries, [...folders.map(d => d.name), ...emptyFolders.map(p => basename(p))], { language })
+      : new Map();
   }
   const plan: PlanItem[] = [];
   const taken = new Set<string>();
@@ -235,7 +254,13 @@ export async function analyzeDirectory(
     }
     let folder: string;
     let reason: string;
-    if (smart) {
+    if (smart && MEDIA_CATEGORIES.has(categoryOf(f.name))) {
+      const category = categoryOf(f.name);
+      const label = language === 'Vietnamese' ? VIETNAMESE_LABELS[category] : category;
+      // Reuse an existing folder for this type, in either language.
+      folder = folders.find(d => [category, VIETNAMESE_LABELS[category]].some(l => l.toLowerCase() === d.name.toLowerCase()))?.name ?? label;
+      reason = `${label} (by file type)`;
+    } else if (smart) {
       const assigned = smart.get(f.name.toLowerCase());
       const name = assigned && sanitizeFolderName(assigned.folder);
       if (!name) continue; // the model wasn't sure; leave the file where it is

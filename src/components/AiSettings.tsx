@@ -16,13 +16,14 @@ export function AiSettings({ settings, onSaved, onClose }: Props) {
   const [baseUrl, setBaseUrl] = useState(settings.baseUrl);
   const [models, setModels] = useState<string[]>([]);
   const [quickList, setQuickList] = useState<string[]>(settings.models);
+  const [thinking, setThinking] = useState(settings.thinking);
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState<'save' | 'test' | 'models' | null>(null);
   const available = new Set(models);
 
   // Save first so test/model listing use exactly what's on screen.
   const persist = async () => {
-    const update: Parameters<typeof window.api.ai.updateSettings>[0] = { model, baseUrl, models: quickList };
+    const update: Parameters<typeof window.api.ai.updateSettings>[0] = { model, baseUrl, models: quickList, thinking };
     if (apiKey.trim()) update.apiKey = apiKey.trim();
     const saved = await window.api.ai.updateSettings(update);
     setApiKey('');
@@ -121,6 +122,16 @@ export function AiSettings({ settings, onSaved, onClose }: Props) {
               ))}
               {quickList.length === 0 && <span className="organizer-muted">Empty. Type a model ID above and press +.</span>}
             </div>
+          </div>
+          <div className="form-group">
+            <label className="organizer-option" style={{ marginBottom: 0 }}>
+              <input type="checkbox" checked={thinking} onChange={e => setThinking(e.target.checked)} />
+              <span>
+                <strong>Let the model think before answering</strong>
+                <span className="organizer-muted"> — off by default. Reasoning models (Nemotron, DeepSeek…) use about 7× more tokens and time
+                  when thinking, and big folders can run out of tokens. Sorting files rarely needs it.</span>
+              </span>
+            </label>
           </div>
           <div className="form-group">
             <label className="form-label">API base URL</label>

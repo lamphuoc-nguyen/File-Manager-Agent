@@ -59,15 +59,31 @@ async function request(path: string, init: RequestInit = {}, timeoutMs = REQUEST
   }
 }
 
+// Models that rejected the "thinking off" switch; they're called without it from then on.
+const noThinkingSwitch = new Set<string>();
+
 async function complete(messages: LlmMessage[], opts: CompletionOptions = {}): Promise<LlmMessage> {
+  const { model, thinking } = getSettings();
   const body: Record<string, any> = {
-    model: getSettings().model,
+    model,
     messages,
     temperature: opts.temperature ?? 0.2,
     max_tokens: opts.maxTokens ?? 2048,
   };
   if (opts.tools) body.tools = opts.tools;
-  const json = await request('/chat/completions', { method: 'POST', body: JSON.stringify(body) }, opts.timeoutMs);
+  // Reasoning models on NVIDIA (Nemotron, Qwen, DeepSeek...) think by default, which for file sorting
+  // costs ~7x the tokens and time for the same answer. Turn it off unless the user asked for it.
+  const sendSwitch = !thinking && !noThinkingSwitch.has(model);
+  if (sendSwitch) body.chat_template_kwargs = { enable_thinking: false };
+  let json: any;
+  try {
+    json = await request('/chat/completions', { method: 'POST', body: JSON.stringify(body) }, opts.timeoutMs);
+  } catch (e: any) {
+    if (!sendSwitch || !/^API error (400|422)/.test(e.message)) throw e;
+    noThinkingSwitch.add(model);
+    delete body.chat_template_kwargs;
+    json = await request('/chat/completions', { method: 'POST', body: JSON.stringify(body) }, opts.timeoutMs);
+  }
   const choice = json.choices?.[0];
   if (!choice?.message) throw new Error('The model returned no answer');
   return { ...choice.message, finish_reason: choice.finish_reason };
@@ -108,9 +124,12 @@ function parseJsonObject(text: string): any {
   return JSON.parse(cleaned.slice(start, end + 1));
 }
 
+// A plan for 150 names (or 25 with excerpts) is ~3-5k tokens of JSON; leave headroom.
+const PLAN_MAX_TOKENS = 8192;
+
 /** Gets a JSON reply, retrying once with a nudge when the model returns broken JSON. */
 async function completeJson(messages: LlmMessage[]): Promise<any> {
-  const reply = await complete(messages, { maxTokens: 4096, temperature: 0.1 });
+  const reply = await complete(messages, { maxTokens: PLAN_MAX_TOKENS, temperature: 0 });
   try {
     return parseJsonObject(reply.content ?? '');
   } catch {
@@ -118,12 +137,12 @@ async function completeJson(messages: LlmMessage[]): Promise<any> {
       ...messages,
       { role: 'assistant', content: reply.content ?? '' },
       { role: 'user', content: 'That was not valid JSON. Reply again with only the JSON object, no other text.' },
-    ], { maxTokens: 4096, temperature: 0 });
+    ], { maxTokens: PLAN_MAX_TOKENS, temperature: 0 });
     try {
       return parseJsonObject(retry.content ?? '');
     } catch {
       if (retry.finish_reason === 'length' || reply.finish_reason === 'length') {
-        throw new Error(`${getSettings().model} ran out of output tokens (reasoning models spend tokens "thinking"). Try a faster non-reasoning model, or turn off "Read file contents".`);
+        throw new Error(`${getSettings().model} ran out of output tokens. Turn off "Let the model think" in AI settings (⚙), or switch to another model.`);
       }
       throw new Error(`${getSettings().model} did not return valid JSON twice in a row. Try another model.`);
     }
@@ -134,7 +153,7 @@ async function completeJson(messages: LlmMessage[]): Promise<any> {
  * Asks the model to group files into folders by meaning (project, topic, purpose).
  * The result is only a proposal: the organizer validates names and the user reviews it.
  */
-export const smartGrouper: SmartGrouper = async (entries, existingFolders) => {
+export const smartGrouper: SmartGrouper = async (entries, existingFolders, hints) => {
   const assignments = new Map<string, { folder: string; reason: string }>();
   const folders = new Set(existingFolders);
   const batchSize = entries.some(e => e.excerpt) ? BATCH_SIZE_WITH_CONTENT : BATCH_SIZE;
@@ -151,7 +170,12 @@ export const smartGrouper: SmartGrouper = async (entries, existingFolders) => {
           'Rules:',
           '- Prefer reusing an existing folder name when it fits.',
           '- Use short, human folder names (1-4 words). No slashes or special characters.',
-          '- Name folders in the language most item names are written in (e.g. Vietnamese names -> Vietnamese folder names, keeping diacritics).',
+          hints.language === 'Vietnamese'
+            ? '- Write ALL folder names in Vietnamese with diacritics (e.g. "Hóa đơn điện nước", "Hợp đồng", "Hồ sơ xin việc", "Tài liệu học tập").'
+            : '- Name folders in the language most item names are written in.',
+          '- Judge each document by its text first, then its name: decide what it IS (utility bill, invoice, contract, tax form, CV,',
+          '  meeting notes, study material, project plan...). Each group holds ONE kind of thing or ONE project:',
+          '  bills, contracts and tax forms are different groups; a lecture is not part of a work project.',
           '- Aim for 3-12 groups; avoid groups with a single item unless it clearly belongs alone.',
           '- Only move a [folder] when it clearly belongs inside a broader group (e.g. several project folders into "Projects").',
           '  Leave out folders that look like they belong to an app or are already a sensible top-level category.',
