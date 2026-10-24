@@ -15,7 +15,8 @@
     "electron:dev": "npm run build:electron && node scripts/dev.mjs",
     "start": "npm run build:electron && vite build && electron .",
     "lint": "eslint .",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "test:electron": "npm run build:electron && node tests/electron/run.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.294.0",

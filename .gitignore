@@ -7,3 +7,6 @@ release/
 # Unpacked app.asar copies from debugging packaged builds
 extracted-asar/
 extracted-check*/
+
+# Electron test fixtures and userData (cleaned by tests/electron/run.mjs)
+tests/.tmp/
