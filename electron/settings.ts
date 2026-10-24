@@ -5,14 +5,14 @@ import type { AiSettings, AiSettingsUpdate } from './ai-types.js';
 
 // NVIDIA's API (build.nvidia.com) is OpenAI-compatible, so any OpenAI-style endpoint works here too.
 export const DEFAULT_BASE_URL = 'https://integrate.api.nvidia.com/v1';
-export const DEFAULT_MODEL = 'meta/llama-3.3-70b-instruct';
-// Starting quick-switch list; IDs on build.nvidia.com change over time, so users edit this in AI settings.
+// Starting quick-switch list; IDs on build.nvidia.com change and get retired over time,
+// so users edit this in AI settings (List checks it against the account).
 export const DEFAULT_MODELS = [
   'google/gemma-4-31b-it',
   'nvidia/nemotron-3.5-lightning-30b-a3b',
   'deepseek-ai/deepseek-v4.1-flash',
-  'meta/llama-3.3-70b-instruct',
 ];
+export const DEFAULT_MODEL = DEFAULT_MODELS[0];
 
 interface StoredSettings {
   baseUrl: string;
@@ -58,9 +58,22 @@ export function getSettings(): AiSettings {
   };
 }
 
+/** Validates the API base URL; catches the common mistake of pasting the NVIDIA website address. */
+function normalizeBaseUrl(input: string): string {
+  const value = input.trim().replace(/\/+$/, '');
+  if (!value) return DEFAULT_BASE_URL;
+  let url: URL;
+  try { url = new URL(value); } catch { throw new Error(`"${value}" is not a valid URL. For NVIDIA use ${DEFAULT_BASE_URL}`); }
+  if (!/^https?:$/.test(url.protocol)) throw new Error(`The base URL must start with https://. For NVIDIA use ${DEFAULT_BASE_URL}`);
+  if (/(^|\.)build\.nvidia\.com$/.test(url.hostname) || url.hostname === 'nvidia.com' || url.hostname === 'www.nvidia.com') {
+    throw new Error(`${url.hostname} is NVIDIA's website, not the API. Use ${DEFAULT_BASE_URL} (click "Reset").`);
+  }
+  return value;
+}
+
 export function updateSettings(update: AiSettingsUpdate): AiSettings {
   const s = load();
-  if (update.baseUrl !== undefined) s.baseUrl = update.baseUrl.trim().replace(/\/+$/, '') || DEFAULT_BASE_URL;
+  if (update.baseUrl !== undefined) s.baseUrl = normalizeBaseUrl(update.baseUrl);
   if (update.model !== undefined) s.model = update.model.trim() || DEFAULT_MODEL;
   if (update.models !== undefined) s.models = [...new Set(update.models.map(m => m.trim()).filter(Boolean))];
   if (update.apiKey !== undefined) {

@@ -124,7 +124,10 @@ export function AiSettings({ settings, onSaved, onClose }: Props) {
           </div>
           <div className="form-group">
             <label className="form-label">API base URL</label>
-            <input className="form-input" value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder={NVIDIA_BASE_URL} />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input className="form-input" value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder={NVIDIA_BASE_URL} />
+              <button className="btn" onClick={() => setBaseUrl(NVIDIA_BASE_URL)} disabled={baseUrl === NVIDIA_BASE_URL} title={`Reset to ${NVIDIA_BASE_URL}`}>Reset</button>
+            </div>
             <p className="organizer-muted" style={{ marginTop: 4 }}>Any OpenAI-compatible endpoint works (NVIDIA NIM, OpenAI, a local server).</p>
           </div>
           {status && (

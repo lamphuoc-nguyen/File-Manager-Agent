@@ -1,4 +1,4 @@
-import { getApiKey, getSettings } from './settings.js';
+import { DEFAULT_BASE_URL, getApiKey, getSettings } from './settings.js';
 import * as fsOps from './fs-ops.js';
 import { analyzeDirectory, type SmartGrouper, type SmartEntry } from './organizer.js';
 import { canExtract, extractTextForAi } from './extract.js';
@@ -18,28 +18,45 @@ interface CompletionOptions {
   tools?: object[];
   temperature?: number;
   maxTokens?: number;
+  timeoutMs?: number;
 }
 
 const REQUEST_TIMEOUT_MS = 120_000;
+const TEST_TIMEOUT_MS = 60_000;
+const WEB_PAGE_HINT = `For NVIDIA the base URL must be ${DEFAULT_BASE_URL} (not the build.nvidia.com website).`;
 
-async function request(path: string, init: RequestInit = {}): Promise<any> {
-  const { baseUrl } = getSettings();
+async function request(path: string, init: RequestInit = {}, timeoutMs = REQUEST_TIMEOUT_MS): Promise<any> {
+  const { baseUrl, model } = getSettings();
   const key = getApiKey();
-  if (!key) throw new Error('No API key set. Add your NVIDIA API key in AI settings.');
-  const res = await fetch(`${baseUrl}${path}`, {
-    ...init,
-    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', Accept: 'application/json' },
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-  });
+  if (!key) throw new Error('No API key set. Paste your NVIDIA API key in AI settings (⚙).');
+  let res: Response;
+  try {
+    res = await fetch(`${baseUrl}${path}`, {
+      ...init,
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (e: any) {
+    if (e?.name === 'TimeoutError' || e?.name === 'AbortError') {
+      throw new Error(`No answer from ${model} within ${timeoutMs / 1000}s. NVIDIA's free endpoints are sometimes busy: try again, or switch to a faster model such as nvidia/nemotron-3.5-lightning-30b-a3b.`);
+    }
+    throw new Error(`Cannot reach ${baseUrl} (${e?.cause?.code ?? e?.message}). Check your internet connection and the base URL.`);
+  }
+  const body = await res.text().catch(() => '');
+  if (/^\s*</.test(body)) throw new Error(`The base URL returned a web page instead of an API response. ${WEB_PAGE_HINT}`);
   if (!res.ok) {
-    const body = await res.text().catch(() => '');
     const detail = (() => { try { const j = JSON.parse(body); return j.detail ?? j.error?.message ?? j.message ?? body; } catch { return body; } })();
-    if (res.status === 401 || res.status === 403) throw new Error(`API key rejected (${res.status}). Check the key in AI settings.`);
-    if (res.status === 404) throw new Error(`Not found (404): check the model name and base URL. ${String(detail).slice(0, 200)}`);
-    if (res.status === 429) throw new Error('Rate limited by the API (429). Wait a moment and try again.');
+    if (res.status === 401 || res.status === 403) throw new Error(`API key rejected (${res.status}). Paste the key again in AI settings; make sure it starts with nvapi-.`);
+    if (res.status === 404) throw new Error(`Not found (404): "${model}" may not exist. Click List in AI settings to see available models. ${String(detail).slice(0, 150)}`);
+    if (res.status === 410) throw new Error(`"${model}" has been retired by NVIDIA. Pick another model (click List in AI settings to see what's available).`);
+    if (res.status === 429) throw new Error('Rate limited by the API (429). Wait a minute and try again.');
     throw new Error(`API error ${res.status}: ${String(detail).slice(0, 300)}`);
   }
-  return res.json();
+  try {
+    return JSON.parse(body);
+  } catch {
+    throw new Error(`The API returned something that isn't JSON. ${WEB_PAGE_HINT}`);
+  }
 }
 
 async function complete(messages: LlmMessage[], opts: CompletionOptions = {}): Promise<LlmMessage> {
@@ -50,7 +67,7 @@ async function complete(messages: LlmMessage[], opts: CompletionOptions = {}): P
     max_tokens: opts.maxTokens ?? 2048,
   };
   if (opts.tools) body.tools = opts.tools;
-  const json = await request('/chat/completions', { method: 'POST', body: JSON.stringify(body) });
+  const json = await request('/chat/completions', { method: 'POST', body: JSON.stringify(body) }, opts.timeoutMs);
   const choice = json.choices?.[0];
   if (!choice?.message) throw new Error('The model returned no answer');
   return { ...choice.message, finish_reason: choice.finish_reason };
@@ -66,7 +83,7 @@ export async function listModels(): Promise<string[]> {
 
 /** Verifies the key and model with a tiny request. */
 export async function testConnection(): Promise<string> {
-  const reply = await complete([{ role: 'user', content: 'Reply with the single word OK.' }], { maxTokens: 300 });
+  const reply = await complete([{ role: 'user', content: 'Reply with the single word OK.' }], { maxTokens: 300, timeoutMs: TEST_TIMEOUT_MS });
   return stripThinking(reply.content ?? '') || 'OK';
 }
 
