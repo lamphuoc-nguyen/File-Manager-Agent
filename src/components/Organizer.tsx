@@ -18,6 +18,8 @@ interface Props {
   analyzing: boolean;
   /** Folder this window organizes. */
   root: string;
+  /** Opens a folder picker to organize a different folder. */
+  onChooseFolder: () => void;
   /** Selected strategy; nothing runs until the user clicks Analyze. */
   strategy: OrganizeStrategy;
   onStrategyChange: (strategy: OrganizeStrategy) => void;
@@ -34,7 +36,7 @@ interface Props {
   onClose: () => void;
 }
 
-export function Organizer({ analysis, analyzing, root, strategy, onStrategyChange, aiEnabled, aiModel, modelPicker, readContents, onReadContentsChange, lastResult, onAnalyze, onApply, onUndo, onClose }: Props) {
+export function Organizer({ analysis, analyzing, root, onChooseFolder, strategy, onStrategyChange, aiEnabled, aiModel, modelPicker, readContents, onReadContentsChange, lastResult, onAnalyze, onApply, onUndo, onClose }: Props) {
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
@@ -85,6 +87,14 @@ export function Organizer({ analysis, analyzing, root, strategy, onStrategyChang
         </div>
 
         <div className="modal-body organizer">
+          <div className="organizer-folder">
+            <Folder size={14} color="#f9d449" style={{ flexShrink: 0 }} />
+            <span className="organizer-folder-path" title={root}>{root}</span>
+            <button className="btn" onClick={onChooseFolder} disabled={analyzing || busy} title="Organize a different folder">
+              Change folder…
+            </button>
+          </div>
+
           <div className="organizer-controls">
             <select className="form-input" value={strategy} onChange={e => onStrategyChange(e.target.value as OrganizeStrategy)} disabled={analyzing || busy}>
               {STRATEGIES.map(s => (

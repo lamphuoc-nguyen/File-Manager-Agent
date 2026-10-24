@@ -40,7 +40,7 @@ const api = {
 
   // Dialogs
   dialog: {
-    openDirectory: (): Promise<string | null> => ipcRenderer.invoke('dialog:openDirectory'),
+    openDirectory: (defaultPath?: string): Promise<string | null> => ipcRenderer.invoke('dialog:openDirectory', defaultPath),
     openFile: (): Promise<string | null> => ipcRenderer.invoke('dialog:openFile'),
     saveFile: (defaultPath: string): Promise<string | null> => ipcRenderer.invoke('dialog:saveFile', defaultPath),
   },

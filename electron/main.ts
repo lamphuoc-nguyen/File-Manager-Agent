@@ -91,9 +91,10 @@ ipcMain.handle('ai:test', async () => testConnection());
 ipcMain.handle('ai:listModels', async () => listModels());
 ipcMain.handle('ai:chat', async (_, history: AiChatMessage[], context: { currentPath: string; persona?: string }) => chat(history, context));
 
-ipcMain.handle('dialog:openDirectory', async () => {
-  const result = await dialog.showOpenDialog(mainWindow!, { properties: ['openDirectory'] });
-  return result.filePaths[0] || null;
+ipcMain.handle('dialog:openDirectory', async (_, defaultPath?: string) => {
+  // Since Electron 43 dialogs start in Downloads unless told otherwise.
+  const result = await dialog.showOpenDialog(mainWindow!, { properties: ['openDirectory'], defaultPath });
+  return result.canceled ? null : result.filePaths[0] || null;
 });
 
 ipcMain.handle('dialog:openFile', async () => {

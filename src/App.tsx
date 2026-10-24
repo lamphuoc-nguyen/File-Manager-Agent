@@ -314,6 +314,14 @@ function App() {
     setOrganizerOpen(true);
   };
 
+  /** Lets the user organize any folder, not only the one being browsed. */
+  const chooseOrganizeFolder = async () => {
+    const dir = await window.api.dialog.openDirectory(organizeRoot || currentPath);
+    if (!dir || normalize(dir).toLowerCase() === normalize(organizeRoot).toLowerCase()) return;
+    setOrganizeRoot(dir);
+    setAnalysis(null); // a plan for the previous folder must never be applied to this one
+  };
+
   const analyzeFolder = async (strategy: OrganizeStrategy = defaultStrategy(), path = currentPath, withContents = readContents) => {
     setOrganizerOpen(true);
     setOrganizeRoot(path);
@@ -712,6 +720,7 @@ function App() {
             onReadContentsChange={changeReadContents}
             lastResult={lastOrganize}
             root={organizeRoot}
+            onChooseFolder={chooseOrganizeFolder}
             onStrategyChange={setOrganizeStrategy}
             onAnalyze={() => analyzeFolder(organizeStrategy, organizeRoot)}
             onApply={applyOrganize}

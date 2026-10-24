@@ -23,6 +23,10 @@ try {
   await sleep(3000);
   await clickText('Organize'); await sleep(1500);
   ok('Organize opens the window', await ev(`!!document.querySelector('.modal-wide')`));
+  const shown = await ev(`document.querySelector('.organizer-folder-path')?.textContent`);
+  const current = await ev(`document.querySelector('.content-header h3')?.textContent`);
+  ok(`folder row shows the folder being organized (${shown})`, !!shown && shown === current);
+  ok('folder row offers "Change folder…"', await ev(`[...document.querySelectorAll('.organizer-folder button')].some(b => b.innerText.includes('Change folder'))`));
   ok('...without analyzing (0 AI requests, no plan)', organizeRequests() === 0 && !(await ev(`!!document.querySelector('.organizer-plan, .organizer-stats')`)));
   console.log('  prompt:', await ev(`document.querySelector('.modal-wide .organizer-empty')?.innerText.replace(/\s+/g,' ')`));
   await pick('.organizer-controls select.form-input', 'type'); await sleep(800);
