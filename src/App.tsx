@@ -99,7 +99,7 @@ function App() {
   });
   const chatEndRef = useRef<HTMLDivElement>(null);
   const listRequest = useRef(0);
-  const toastTimer = useRef<number>();
+  const toastTimer = useRef<number | undefined>(undefined);
 
   const selectedItem = files.find(f => f.path === selected) ?? null;
 
